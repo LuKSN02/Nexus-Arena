@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexus Arena — Notícias de E-Sports e Loja Gamer</title>
+<meta name="description" content="Portal de notícias de e-sports com loja integrada de periféricos e itens gamers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<meta name="theme-color" content="#0a0d14">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ================= TOASTS ================= -->
+<div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+<!-- ================= TELA DE AUTENTICAÇÃO ================= -->
+<section id="authScreen" class="auth-screen">
+  <div class="auth-card">
+    <div class="auth-card__brand">
+      <img src="assets/icon-64.png" width="30" height="30" alt="" style="border-radius:8px;display:block;">
+      <span class="brand__name">NEXUS <em>ARENA</em></span>
+    </div>
+
+    <div id="authAlert"></div>
+
+    <div class="auth-tabs" role="tablist">
+      <button class="auth-tab active" data-tab="login" type="button">Entrar</button>
+      <button class="auth-tab" data-tab="register" type="button">Criar conta</button>
+    </div>
+
+    <!-- ---- LOGIN ---- -->
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="loginIdentifier">E-mail ou usuário</label>
+        <div class="field-input" id="loginIdentifierWrap">
+          <input id="loginIdentifier" name="identifier" type="text" autocomplete="username" placeholder="voce@email.com">
+        </div>
+        <div class="field-hint" id="loginIdentifierHint"></div>
+      </div>
+      <div class="field">
+        <label for="loginPassword">Senha</label>
+        <div class="field-input" id="loginPasswordWrap">
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Sua senha">
+          <button type="button" class="field-toggle" data-toggle-pwd="loginPassword" aria-label="Mostrar senha"></button>
+        </div>
+        <div class="field-hint" id="loginPasswordHint"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginSubmit">Entrar na plataforma</button>
+      <div class="demo-note">Ambiente de demonstração: cadastre-se normalmente — os dados ficam salvos apenas neste navegador.</div>
+    </form>
+
+    <!-- ---- CADASTRO ---- -->
+    <form id="registerForm" class="hidden" novalidate>
+      <div class="field">
+        <label for="regUsername">Nome de usuário</label>
+        <div class="field-input" id="regUsernameWrap">
+          <input id="regUsername" name="username" type="text" autocomplete="nickname" placeholder="SeuNick">
+        </div>
+        <div class="field-hint" id="regUsernameHint"></div>
+      </div>
+      <div class="field">
+        <label for="regEmail">E-mail</label>
+        <div class="field-input" id="regEmailWrap">
+          <input id="regEmail" name="email" type="email" autocomplete="email" placeholder="voce@email.com">
+        </div>
+        <div class="field-hint" id="regEmailHint"></div>
+      </div>
+      <div class="field">
+        <label for="regPassword">Senha</label>
+        <div class="field-input" id="regPasswordWrap">
+          <input id="regPassword" name="password" type="password" autocomplete="new-password" placeholder="Crie uma senha forte">
+          <button type="button" class="field-toggle" data-toggle-pwd="regPassword" aria-label="Mostrar senha"></button>
+        </div>
+        <div class="pwd-meter" id="pwdMeter"><i></i><i></i><i></i><i></i></div>
+        <div class="field-hint" id="regPasswordHint"></div>
+      </div>
+      <div class="field">
+        <label for="regPassword2">Confirmar senha</label>
+        <div class="field-input" id="regPassword2Wrap">
+          <input id="regPassword2" name="password2" type="password" autocomplete="new-password" placeholder="Repita a senha">
+        </div>
+        <div class="field-hint" id="regPassword2Hint"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="registerSubmit">Criar minha conta</button>
+    </form>
+
+    <div class="auth-foot" id="authSwitchHint">
+      Ainda não tem conta? <a href="#" class="link-accent" id="gotoRegister">Cadastre-se</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SHELL DO APP ================= -->
+<div id="appShell" class="hidden">
+
+  <div class="ticker" id="tickerBar">
+    <div class="ticker__tag"><span class="ticker__dot"></span>AO VIVO</div>
+    <div class="ticker__track" id="tickerTrack"></div>
+  </div>
+
+  <header class="navbar">
+    <div class="container navbar__inner">
+      <button class="icon-btn hamburger" id="mobileMenuBtn" aria-label="Abrir menu"></button>
+
+      <div class="brand">
+        <img class="brand__mark" src="assets/icon-64.png" alt="" style="border-radius:8px;">
+        <span class="brand__name">NEXUS <em>ARENA</em></span>
+      </div>
+
+      <nav class="nav-links" id="navLinks">
+        <button class="nav-link active" data-view="home" type="button"></button>
+        <button class="nav-link" data-view="shop" type="button"></button>
+      </nav>
+
+      <div class="navbar__spacer"></div>
+
+      <div class="search-box">
+        <span id="searchIcon"></span>
+        <input type="text" id="searchInput" placeholder="Buscar notícias ou produtos...">
+      </div>
+
+      <button class="icon-btn" id="cartBtn" aria-label="Abrir carrinho">
+        <span id="cartIcon"></span>
+        <span class="badge-count hidden" id="cartCount">0</span>
+      </button>
+
+      <button class="profile-chip" id="profileChip" type="button">
+        <span class="avatar-wrap">
+          <img class="avatar" id="chipAvatar" width="30" height="30" alt="">
+        </span>
+        <span class="profile-chip__text">
+          <span class="profile-chip__name" id="chipName">—</span>
+          <span class="profile-chip__tag" id="chipTag">#0000</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <main id="mainContent"></main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="brand" style="margin-bottom:10px;">
+            <img class="brand__mark" src="assets/icon-64.png" width="26" height="26" alt="" style="border-radius:6px;">
+            <span class="brand__name">NEXUS <em>ARENA</em></span>
+          </div>
+          <p style="font-size:12.5px;max-width:280px;">Notícias de e-sports, análises de meta e loja de periféricos em um só lugar.</p>
+        </div>
+        <div>
+          <h5>NOTÍCIAS</h5>
+          <a href="#" data-footer-view="home" data-footer-cat="lol">League of Legends</a>
+          <a href="#" data-footer-view="home" data-footer-cat="cs2">CS2</a>
+          <a href="#" data-footer-view="home" data-footer-cat="valorant">Valorant</a>
+        </div>
+        <div>
+          <h5>LOJA</h5>
+          <a href="#" data-footer-view="shop" data-footer-cat="mouse">Mouses</a>
+          <a href="#" data-footer-view="shop" data-footer-cat="teclado">Teclados</a>
+          <a href="#" data-footer-view="shop" data-footer-cat="headset">Headsets</a>
+        </div>
+        <div>
+          <h5>CONTA</h5>
+          <a href="#" id="footerProfileLink">Meu perfil</a>
+          <a href="#" id="footerCartLink">Meu carrinho</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Nexus Arena. Projeto de demonstração — sem afiliação com jogos ou marcas citadas.</span>
+        <span>Feito com HTML, CSS e JavaScript puro.</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<!-- ================= CARRINHO (drawer) ================= -->
+<div class="overlay" id="cartOverlay"></div>
+<aside class="drawer" id="cartDrawer">
+  <div class="drawer__head">
+    <h3><span id="drawerCartIcon"></span>Seu carrinho</h3>
+    <button class="modal__close" id="closeCartBtn"></button>
+  </div>
+  <div class="drawer__body" id="cartBody"></div>
+  <div class="drawer__foot" id="cartFoot"></div>
+</aside>
+
+<!-- ================= MODAL GENÉRICO (artigo / perfil / etc.) ================= -->
+<div class="overlay" id="modalOverlay"></div>
+<div class="modal-wrap" id="modalRoot"></div>
+
+<script src="js/icons.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/db.js"></script>
+<script src="js/data.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
