@@ -66,6 +66,28 @@ só conhece o contrato de `Api.*`.
 > back-end real, o hash de senha deve ser feito no servidor com bcrypt/argon2
 > e a senha nunca deve trafegar ou ser validada apenas no front-end.
 
+## Conta — funcionalidades extras
+
+- **Histórico de pedidos**: nova aba "Meus Pedidos" no painel de perfil,
+  listando todos os pedidos do usuário (mais recente primeiro) com resumo
+  expansível — itens, subtotal, desconto de cupom, frete e forma de
+  pagamento.
+- **Central de notificações**: sino na navbar com contador de não lidas.
+  O app gera notificações reais para eventos da própria conta: boas-vindas
+  ao criar conta, confirmação de pedido, emblema conquistado (primeira
+  compra) e confirmação de inscrição na newsletter. Dá pra marcar
+  individualmente ou todas de uma vez como lidas.
+- **Exportar meus dados**: botão em Configurações da conta que baixa um
+  `.json` com tudo que a plataforma guarda sobre o usuário — perfil,
+  pedidos, lista de desejos, carrinho, comentários, avaliações e
+  notificações (portabilidade de dados, no espírito de LGPD/GDPR).
+- **Excluir minha conta**: fluxo de exclusão com duas confirmações
+  (digitar "EXCLUIR" + senha atual) antes de apagar a conta e todos os
+  dados pessoais vinculados (carrinho, lista de desejos, notificações,
+  sessão). Pedidos, comentários e avaliações permanecem no sistema de forma
+  desvinculada, como a maioria das plataformas reais faz por motivos de
+  histórico/contabilidade.
+
 ## Notícias — funcionalidades extras
 
 - **Newsletter**: card na barra lateral da home com captura de e-mail

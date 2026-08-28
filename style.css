@@ -625,6 +625,41 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 
 .wishlist-list{ display:flex; flex-direction:column; }
 
+/* ---- notificações ---- */
+.notif-toolbar{ display:flex; justify-content:flex-end; margin-bottom:12px; }
+.notif-item{
+  display:flex; align-items:flex-start; gap:11px; width:100%; text-align:left;
+  background:none; border:none; border-bottom:1px solid var(--border-soft); padding:12px 6px; position:relative;
+}
+.notif-item:last-child{ border-bottom:none; }
+.notif-item:hover{ background:var(--surface-2); border-radius:var(--radius-s); }
+.notif-item__icon{ width:32px; height:32px; border-radius:8px; background:var(--surface-2); color:var(--teal); display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+.notif-item__body{ display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+.notif-item__title{ font-size:12.5px; font-weight:700; color:var(--text); }
+.notif-item__msg{ font-size:12px; color:var(--text-dim); }
+.notif-item__time{ font-size:10.5px; color:var(--text-faint); font-family:var(--f-mono); margin-top:2px; }
+.notif-item.unread .notif-item__title{ color:var(--text); }
+.notif-item.unread{ background:rgba(47,217,199,.04); }
+.notif-item__dot{ width:8px; height:8px; border-radius:50%; background:var(--teal); flex:0 0 auto; margin-top:6px; }
+
+/* ---- histórico de pedidos ---- */
+.order-card{ border:1px solid var(--border); border-radius:var(--radius-m); margin-bottom:10px; overflow:hidden; }
+.order-card__head{
+  display:flex; align-items:center; gap:12px; width:100%; padding:13px 14px; background:var(--surface-2);
+  border:none; color:var(--text); text-align:left;
+}
+.order-card__head svg{ flex:0 0 auto; color:var(--text-faint); transition:transform .2s ease; }
+.order-card.open .order-card__head svg{ transform:rotate(180deg); }
+.order-card__info{ display:flex; flex-direction:column; gap:2px; }
+.order-card__id{ font-size:12px; font-weight:700; }
+.order-card__date{ font-size:11px; color:var(--text-faint); }
+.order-card__status{
+  font-size:10.5px; font-weight:700; color:var(--success); background:rgba(53,208,127,.12);
+  padding:3px 8px; border-radius:99px; margin-left:auto;
+}
+.order-card__total{ font-size:14px; }
+.order-card__body{ padding:14px; border-top:1px solid var(--border-soft); }
+
 /* ==========================================================================
    MODAL GENÉRICO
    ========================================================================== */

@@ -19,6 +19,7 @@ const DB = {
     WISHLIST_PREFIX: 'na_db_wishlist_',
     REVIEWS: 'na_db_reviews',
     NEWSLETTER: 'na_db_newsletter',
+    NOTIFICATIONS_PREFIX: 'na_db_notifications_',
     SEEDED: 'na_db_seeded_v1'
   },
 
@@ -56,6 +57,10 @@ const DB = {
     this.saveUsers(users);
     return user;
   },
+  deleteUser(userId){
+    const users = this.getUsers().filter(u => u.id !== userId);
+    return this.saveUsers(users);
+  },
 
   // ---- session ----
   getSessionUserId(){ return this._get(this.KEYS.SESSION, null); },
@@ -78,6 +83,15 @@ const DB = {
   getWishlist(ownerKey){ return this._get(this.KEYS.WISHLIST_PREFIX + ownerKey, []); },
   saveWishlist(ownerKey, productIds){ return this._set(this.KEYS.WISHLIST_PREFIX + ownerKey, productIds); },
 
+  // ---- remoção completa dos dados pessoais de um usuário (exclusão de conta) ----
+  wipeUserData(ownerKey){
+    try{
+      localStorage.removeItem(this.KEYS.CART_PREFIX + ownerKey);
+      localStorage.removeItem(this.KEYS.WISHLIST_PREFIX + ownerKey);
+      localStorage.removeItem(this.KEYS.NOTIFICATIONS_PREFIX + ownerKey);
+    }catch(e){ console.error('DB wipe error', e); }
+  },
+
   // ---- avaliações de produtos ----
   getReviews(){ return this._get(this.KEYS.REVIEWS, []); },
   saveReviews(list){ return this._set(this.KEYS.REVIEWS, list); },
@@ -85,6 +99,11 @@ const DB = {
   // ---- inscrições da newsletter ----
   getNewsletterSubs(){ return this._get(this.KEYS.NEWSLETTER, []); },
   saveNewsletterSubs(list){ return this._set(this.KEYS.NEWSLETTER, list); },
+
+  // ---- notificações (por usuário) ----
+  getNotifications(ownerKey){ return this._get(this.KEYS.NOTIFICATIONS_PREFIX + ownerKey, []); },
+  saveNotifications(ownerKey, list){ return this._set(this.KEYS.NOTIFICATIONS_PREFIX + ownerKey, list); },
+  clearNotifications(ownerKey){ try{ localStorage.removeItem(this.KEYS.NOTIFICATIONS_PREFIX + ownerKey); }catch(e){} },
 
   // ---- orders ----
   getOrders(){ return this._get(this.KEYS.ORDERS, []); },

@@ -17,6 +17,7 @@ const State = {
   productPage: 1,
   cart: [],
   wishlist: [],
+  notifications: [],
   coupon: null,
   maxPrice: 700,
   checkoutStep: 1,
@@ -145,7 +146,7 @@ async function init(){
   if (current){
     State.user = current;
     State.cart = DB.getCart(cartOwnerKey());
-    enterApp();
+    await enterApp();
   } else {
     State.cart = DB.getCart('guest');
     showAuthScreen();
@@ -156,6 +157,7 @@ function fillStaticIcons(){
   $('#searchIcon').innerHTML = Icons.svg('search', 16);
   $('#cartIcon').innerHTML = Icons.svg('cart', 18);
   $('#wishlistIcon').innerHTML = Icons.svg('heart', 18);
+  $('#notifIcon').innerHTML = Icons.svg('bell', 18);
   $('#drawerCartIcon').innerHTML = Icons.svg('cart', 17);
   $('#mobileMenuBtn').innerHTML = Icons.svg('menu', 18);
   $all('.modal__close').forEach(b => b.innerHTML = Icons.svg('close', 15));
@@ -183,6 +185,8 @@ async function enterApp(){
   renderCartDrawer();
   State.wishlist = await Api.getWishlist(cartOwnerKey());
   renderWishlistBadge();
+  State.notifications = await Api.getNotifications(cartOwnerKey());
+  renderNotifBadge();
 }
 
 function switchAuthTab(tab){
@@ -260,7 +264,7 @@ function bindAuthEvents(){
       State.user = user;
       State.cart = DB.getCart(cartOwnerKey());
       Toast.show(`Bem-vindo de volta, ${user.username}!`, 'success', 'checkCircle');
-      enterApp();
+      await enterApp();
       $('#loginForm').reset();
     }catch(err){
       if (err.field === 'identifier') setFieldState('loginIdentifierWrap', 'loginIdentifierHint', 'error', err.message);
@@ -327,7 +331,8 @@ function bindAuthEvents(){
       State.user = user;
       State.cart = DB.getCart(cartOwnerKey());
       Toast.show(`Conta criada! Bem-vindo, ${user.username}.`, 'success', 'checkCircle');
-      enterApp();
+      await enterApp();
+      await pushNotification('welcome', 'Bem-vindo à Nexus Arena!', `Sua conta ${user.username}#${user.tag} foi criada com sucesso. Explore as notícias e a loja.`);
       $('#registerForm').reset();
     }catch(err){
       if (err.field === 'username') setFieldState('regUsernameWrap', 'regUsernameHint', 'error', err.message);
@@ -376,6 +381,7 @@ function bindShellEvents(){
 
   $('#cartBtn').addEventListener('click', openCart);
   $('#wishlistBtn').addEventListener('click', openWishlistModal);
+  $('#notifBtn').addEventListener('click', openNotificationsModal);
   $('#closeCartBtn').addEventListener('click', closeCart);
   $('#cartOverlay').addEventListener('click', () => { closeCart(); closeModal(); });
 
@@ -588,6 +594,7 @@ function bindNewsletterForm(){
       setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Inscrito! Fique de olho na sua caixa de entrada.');
       form.reset();
       Toast.show('Inscrição na newsletter confirmada.', 'success', 'mail');
+      await pushNotification('newsletter', 'Inscrição na newsletter', `O e-mail ${email} foi inscrito para receber o resumo semanal de notícias.`);
     }catch(err){
       setFieldState('newsletterWrap', 'newsletterHint', 'error', err.message || 'Não foi possível concluir a inscrição.');
     }finally{
@@ -1261,6 +1268,71 @@ function openWishlistModal(){
 }
 
 /* ============================================================================
+   CENTRAL DE NOTIFICAÇÕES
+   ========================================================================== */
+const NOTIF_ICONS = { welcome: 'user', order: 'package', badge: 'shield', newsletter: 'mail', default: 'bell' };
+
+function renderNotifBadge(){
+  const unread = State.notifications.filter(n => !n.read).length;
+  $('#notifCount').textContent = unread;
+  $('#notifCount').classList.toggle('hidden', unread === 0);
+}
+
+async function pushNotification(type, title, message, meta = null){
+  if (!State.user) return;
+  State.notifications = await Api.addNotification(cartOwnerKey(), { type, title, message, meta });
+  renderNotifBadge();
+}
+
+function openNotificationsModal(){
+  if (!State.user) return Toast.show('Entre na sua conta para ver notificações.', 'warn');
+  if (!State.notifications.length){
+    openModal('sm', `
+      <div class="cart-empty">
+        ${Icons.svg('bell', 40)}
+        <p>Você ainda não tem notificações.</p>
+      </div>`, 'Notificações');
+    return;
+  }
+
+  openModal('md', `
+    <div class="notif-toolbar">
+      <button class="btn btn-ghost btn-sm" id="markAllReadBtn">${Icons.svg('checkCircle', 13)} Marcar todas como lidas</button>
+    </div>
+    <div id="notifList"></div>
+  `, 'Notificações');
+
+  renderNotifList();
+
+  $('#markAllReadBtn').addEventListener('click', async () => {
+    State.notifications = await Api.markAllNotificationsRead(cartOwnerKey());
+    renderNotifBadge();
+    renderNotifList();
+  });
+
+  function renderNotifList(){
+    $('#notifList').innerHTML = State.notifications.map(n => `
+      <button type="button" class="notif-item ${n.read ? '' : 'unread'}" data-notif-id="${n.id}">
+        <span class="notif-item__icon">${Icons.svg(NOTIF_ICONS[n.type] || NOTIF_ICONS.default, 16)}</span>
+        <span class="notif-item__body">
+          <span class="notif-item__title">${Utils.escapeHtml(n.title)}</span>
+          <span class="notif-item__msg">${Utils.escapeHtml(n.message)}</span>
+          <span class="notif-item__time">${Utils.timeAgo(n.createdAt)}</span>
+        </span>
+        ${!n.read ? `<span class="notif-item__dot" aria-hidden="true"></span>` : ''}
+      </button>`).join('');
+
+    $all('[data-notif-id]').forEach(b => b.addEventListener('click', async () => {
+      if (b.classList.contains('unread')){
+        State.notifications = await Api.markNotificationRead(cartOwnerKey(), b.dataset.notifId);
+        renderNotifBadge();
+        renderNotifList();
+      }
+    }));
+  }
+}
+
+/* ============================================================================
    MODAL DE DETALHE DO PRODUTO + AVALIAÇÕES
    ========================================================================== */
 function starIcon(filled, size = 14){
@@ -1623,8 +1695,10 @@ async function submitOrder(){
     State.coupon = null;
     State.lastOrder = order;
     renderCartDrawer();
+    await pushNotification('order', 'Pedido confirmado', `Pedido #${order.id} no valor de ${Utils.brl(order.total)} foi confirmado.`, { orderId: order.id });
     if (State.user && !State.user.badges.includes('buyer')){
       State.user = await Api.updateProfile(State.user.id, { badges: [...State.user.badges, 'buyer'] });
+      await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
     }
     renderOrderSuccessView(order);
     Toast.show('Pedido realizado com sucesso!', 'success', 'checkCircle');
@@ -1679,6 +1753,7 @@ function openProfilePanel(){
       </div>
       <div class="profile-tabs">
         <button class="ptab active" data-ptab="perfil">PERFIL</button>
+        <button class="ptab" data-ptab="pedidos">MEUS PEDIDOS</button>
         <button class="ptab" data-ptab="config">CONFIGURAÇÕES DA CONTA</button>
       </div>
       <div class="profile-tab-content" id="ptabContent"></div>
@@ -1810,6 +1885,45 @@ function renderProfileTab(tab){
       };
       reader.readAsDataURL(file);
     });
+  } else if (tab === 'pedidos'){
+    box.innerHTML = `<p style="color:var(--text-faint);">Carregando pedidos...</p>`;
+    Api.getOrderHistory(cartOwnerKey()).then(orders => {
+      if (!orders.length){
+        box.innerHTML = `
+          <div class="cart-empty" style="padding:30px 10px;">
+            ${Icons.svg('package', 36)}
+            <p>Você ainda não fez nenhum pedido.</p>
+          </div>`;
+        return;
+      }
+      box.innerHTML = orders.map(o => `
+        <div class="order-card">
+          <button type="button" class="order-card__head" data-order-toggle="${o.id}">
+            <span class="order-card__info">
+              <span class="order-card__id mono">#${o.id}</span>
+              <span class="order-card__date">${new Date(o.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            </span>
+            <span class="order-card__status">Confirmado</span>
+            <span class="order-card__total price">${Utils.brl(o.total)}</span>
+            ${Icons.svg('chevronDown', 15)}
+          </button>
+          <div class="order-card__body hidden" id="orderBody-${o.id}">
+            ${o.items.map(i => `<div class="mini-item"><span>${i.qty}x ${Utils.escapeHtml(i.name)}</span><span class="mono">${Utils.brl(i.price * i.qty)}</span></div>`).join('')}
+            <div class="panel-divider"></div>
+            <div class="summary-row"><span>Subtotal</span><span class="mono">${Utils.brl(o.subtotal)}</span></div>
+            ${o.discount ? `<div class="summary-row" style="color:var(--teal);"><span>Desconto${o.coupon ? ' (' + o.coupon + ')' : ''}</span><span class="mono">-${Utils.brl(o.discount)}</span></div>` : ''}
+            <div class="summary-row"><span>Frete</span><span class="mono">${o.shipping === 0 ? 'Grátis' : Utils.brl(o.shipping)}</span></div>
+            <div class="summary-row total"><span>Total</span><span class="price">${Utils.brl(o.total)}</span></div>
+            <p style="font-size:11.5px;margin-top:8px;">Pagamento: ${{ card: 'Cartão de crédito', pix: 'Pix', boleto: 'Boleto' }[o.paymentMethod] || o.paymentMethod}</p>
+          </div>
+        </div>
+      `).join('');
+
+      $all('[data-order-toggle]').forEach(b => b.addEventListener('click', () => {
+        $('#orderBody-' + b.dataset.orderToggle).classList.toggle('hidden');
+        b.closest('.order-card').classList.toggle('open');
+      }));
+    });
   } else {
     box.innerHTML = `
       <div class="field">
@@ -1835,6 +1949,26 @@ function renderProfileTab(tab){
         </div>
         <button type="submit" class="btn btn-secondary btn-block">Atualizar senha</button>
       </form>
+      <div class="panel-divider"></div>
+      <h4 style="font-size:12px;color:var(--text-faint);letter-spacing:.1em;margin-bottom:12px;">DADOS E PRIVACIDADE</h4>
+      <button class="btn btn-secondary btn-block" id="exportDataBtn" style="margin-bottom:10px;">${Icons.svg('box', 15)} Exportar meus dados (JSON)</button>
+      <button class="btn btn-ghost btn-block" id="showDeleteAccountBtn" style="border-color:var(--signal);color:var(--signal);">${Icons.svg('trash', 15)} Excluir minha conta</button>
+      <div class="hidden" id="deleteAccountPanel">
+        <div class="form-alert" style="margin-top:12px;">
+          ${Icons.svg('alertCircle', 16)}
+          <span>Essa ação é permanente. Sua conta, carrinho, lista de desejos e notificações serão apagados e você será desconectado.</span>
+        </div>
+        <div class="field">
+          <label>Digite EXCLUIR para confirmar</label>
+          <div class="field-input"><input id="deleteConfirmText" placeholder="EXCLUIR"></div>
+        </div>
+        <div class="field">
+          <label>Confirme sua senha</label>
+          <div class="field-input" id="deletePwdWrap"><input id="deletePwd" type="password"></div>
+          <div class="field-hint" id="deletePwdHint"></div>
+        </div>
+        <button class="btn btn-primary btn-block" id="confirmDeleteAccountBtn" style="background:var(--signal);" disabled>Excluir permanentemente</button>
+      </div>
       <div class="panel-divider"></div>
       <button class="btn btn-primary btn-block" id="logoutBtn">${Icons.svg('logout', 15)} Encerrar sessão</button>
     `;
@@ -1862,6 +1996,58 @@ function renderProfileTab(tab){
       closeModal();
       Toast.show('Sessão encerrada.', 'info', 'logout');
       showAuthScreen();
+    });
+
+    $('#exportDataBtn').addEventListener('click', async () => {
+      const btn = $('#exportDataBtn');
+      btn.disabled = true;
+      try{
+        const data = await Api.exportAccountData(u.id);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nexus-arena-dados-${u.username}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        Toast.show('Seus dados foram exportados.', 'success', 'box');
+      }catch(err){
+        Toast.show(err.message || 'Não foi possível exportar seus dados.', 'error');
+      }finally{
+        btn.disabled = false;
+      }
+    });
+
+    $('#showDeleteAccountBtn').addEventListener('click', () => {
+      $('#deleteAccountPanel').classList.toggle('hidden');
+    });
+
+    const checkDeleteReady = () => {
+      const ready = $('#deleteConfirmText').value.trim().toUpperCase() === 'EXCLUIR' && $('#deletePwd').value.length > 0;
+      $('#confirmDeleteAccountBtn').disabled = !ready;
+    };
+    $('#deleteConfirmText').addEventListener('input', checkDeleteReady);
+    $('#deletePwd').addEventListener('input', checkDeleteReady);
+
+    $('#confirmDeleteAccountBtn').addEventListener('click', async () => {
+      const btn = $('#confirmDeleteAccountBtn');
+      btn.disabled = true; btn.textContent = 'Excluindo...';
+      try{
+        await Api.deleteAccount(u.id, $('#deletePwd').value);
+        State.user = null;
+        State.cart = [];
+        State.wishlist = [];
+        State.notifications = [];
+        State.coupon = null;
+        closeModal();
+        Toast.show('Sua conta foi excluída.', 'info', 'trash');
+        showAuthScreen();
+      }catch(err){
+        setFieldState('deletePwdWrap', 'deletePwdHint', 'error', err.message || 'Não foi possível excluir a conta.');
+        btn.disabled = false; btn.textContent = 'Excluir permanentemente';
+      }
     });
   }
 }

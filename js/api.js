@@ -297,6 +297,13 @@ const Api = {
     return record;
   },
 
+  async getOrderHistory(ownerKey){
+    await Utils.delay(250);
+    return DB.getOrders()
+      .filter(o => o.ownerKey === ownerKey)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
   hasPurchased(ownerKey, productId){
     return DB.getOrders().some(o => o.ownerKey === ownerKey && (o.items || []).some(i => i.productId === productId));
   },
@@ -381,5 +388,72 @@ const Api = {
       throw { message: 'Cupom inválido ou expirado.' };
     }
     return found;
+  },
+
+  /* ============================== NOTIFICAÇÕES ============================== */
+
+  async getNotifications(ownerKey){
+    await Utils.delay(180);
+    return DB.getNotifications(ownerKey).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async addNotification(ownerKey, { type = 'info', title, message, meta = null }){
+    const list = DB.getNotifications(ownerKey);
+    list.push({
+      id: Utils.uid('notif'),
+      type, title, message, meta,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    DB.saveNotifications(ownerKey, list);
+    return list;
+  },
+
+  async markNotificationRead(ownerKey, notifId){
+    await Utils.delay(100);
+    const list = DB.getNotifications(ownerKey);
+    const n = list.find(x => x.id === notifId);
+    if (n) n.read = true;
+    DB.saveNotifications(ownerKey, list);
+    return list;
+  },
+
+  async markAllNotificationsRead(ownerKey){
+    await Utils.delay(150);
+    const list = DB.getNotifications(ownerKey).map(n => ({ ...n, read: true }));
+    DB.saveNotifications(ownerKey, list);
+    return list;
+  },
+
+  /* ============================== CONTA ============================== */
+
+  async exportAccountData(userId){
+    await Utils.delay(400);
+    const user = DB.findUserById(userId);
+    if (!user) throw { message: 'Usuário não encontrado.' };
+    const { passHash, ...publicUser } = user;
+    return {
+      exportedAt: new Date().toISOString(),
+      profile: publicUser,
+      orders: DB.getOrders().filter(o => o.ownerKey === userId),
+      wishlist: DB.getWishlist(userId),
+      cart: DB.getCart(userId),
+      comments: DB.getComments().filter(c => c.userId === userId),
+      reviews: DB.getReviews().filter(r => r.userId === userId),
+      notifications: DB.getNotifications(userId)
+    };
+  },
+
+  async deleteAccount(userId, password){
+    await Utils.delay(500);
+    const user = DB.findUserById(userId);
+    if (!user) throw { message: 'Usuário não encontrado.' };
+    if (user.passHash !== Utils.simpleHash(password)){
+      throw { field: 'password', message: 'Senha incorreta.' };
+    }
+    DB.deleteUser(userId);
+    DB.wipeUserData(userId);
+    DB.clearSession();
+    return true;
   }
 };
