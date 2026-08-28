@@ -16,6 +16,9 @@ const DB = {
     ARTICLE_LIKES: 'na_db_article_likes',
     ORDERS: 'na_db_orders',
     CART_PREFIX: 'na_db_cart_',
+    WISHLIST_PREFIX: 'na_db_wishlist_',
+    REVIEWS: 'na_db_reviews',
+    NEWSLETTER: 'na_db_newsletter',
     SEEDED: 'na_db_seeded_v1'
   },
 
@@ -70,6 +73,18 @@ const DB = {
   // ---- cart (por usuário, ou "guest" quando deslogado) ----
   getCart(ownerKey){ return this._get(this.KEYS.CART_PREFIX + ownerKey, []); },
   saveCart(ownerKey, items){ return this._set(this.KEYS.CART_PREFIX + ownerKey, items); },
+
+  // ---- lista de desejos (por usuário) ----
+  getWishlist(ownerKey){ return this._get(this.KEYS.WISHLIST_PREFIX + ownerKey, []); },
+  saveWishlist(ownerKey, productIds){ return this._set(this.KEYS.WISHLIST_PREFIX + ownerKey, productIds); },
+
+  // ---- avaliações de produtos ----
+  getReviews(){ return this._get(this.KEYS.REVIEWS, []); },
+  saveReviews(list){ return this._set(this.KEYS.REVIEWS, list); },
+
+  // ---- inscrições da newsletter ----
+  getNewsletterSubs(){ return this._get(this.KEYS.NEWSLETTER, []); },
+  saveNewsletterSubs(list){ return this._set(this.KEYS.NEWSLETTER, list); },
 
   // ---- orders ----
   getOrders(){ return this._get(this.KEYS.ORDERS, []); },

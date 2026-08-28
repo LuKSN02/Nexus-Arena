@@ -30,7 +30,7 @@ function gameArt(catKey, seedNum = 1){
   const c = catInfo(catKey);
   const id = `art_${catKey}_${seedNum}_${Math.random().toString(36).slice(2, 6)}`;
   return `
-  <svg class="gfx" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+  <svg class="gfx" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
       <linearGradient id="${id}bg" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%" stop-color="#0d1119"/>
@@ -304,3 +304,10 @@ const AVAILABLE_BADGES = [
 ];
 
 const BANNER_COLORS = ['#ff3b5c', '#2fd9c7', '#ffb93d', '#3fa9ff', '#c34fff', '#1a1e2c'];
+
+/* Cupons de desconto válidos na loja (demonstração) */
+const COUPONS = [
+  { code: 'NEXUS10', type: 'percent', value: 10, label: '10% de desconto no pedido' },
+  { code: 'BEMVINDO20', type: 'percent', value: 20, label: '20% de desconto de boas-vindas' },
+  { code: 'FRETEGRATIS', type: 'shipping', value: 0, label: 'Frete grátis' }
+];

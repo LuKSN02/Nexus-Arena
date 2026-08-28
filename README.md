@@ -66,8 +66,92 @@ só conhece o contrato de `Api.*`.
 > back-end real, o hash de senha deve ser feito no servidor com bcrypt/argon2
 > e a senha nunca deve trafegar ou ser validada apenas no front-end.
 
-## Funcionalidades implementadas
+## Notícias — funcionalidades extras
 
+- **Newsletter**: card na barra lateral da home com captura de e-mail
+  validada, salva em `localStorage` (lista de inscritos, sem envio real de
+  e-mail — é uma demonstração de front-end).
+- **Compartilhar de verdade**: o botão "Compartilhar" usa a Web Share API
+  nativa do navegador/celular quando disponível (abre o menu de
+  compartilhamento do sistema); nos navegadores sem suporte, copia o link
+  para a área de transferência automaticamente.
+- **Notícias relacionadas**: ao fim de cada matéria, até 3 notícias da mesma
+  categoria, clicáveis (reabrem o modal já na nova notícia).
+- **Mais lidas da semana**: widget na lateral da home com o ranking das 5
+  notícias com mais curtidas + comentários combinados.
+- **Respostas em comentários**: cada comentário de nível principal tem um
+  botão "Responder", que abre um campo de resposta em thread (um nível de
+  aninhamento, no estilo YouTube/Reddit) — curtir e remover funcionam também
+  nas respostas.
+- **Busca unificada com dropdown**: digitar na busca da navbar mostra um
+  dropdown com notícias e produtos correspondentes em tempo real, sem sair
+  da página atual; clicar num resultado abre o item direto. A filtragem da
+  página (home/loja) continua acontecendo em paralelo, se você já estiver
+  nela.
+
+## Loja — funcionalidades extras
+
+- **Lista de desejos**: ícone de coração na navbar (com contador) e botão de
+  favoritar em cada card de produto. Persistida por usuário no `localStorage`,
+  com modal próprio para revisar e mover itens direto para o carrinho.
+- **Avaliações de produtos**: cada produto tem uma página de detalhe (clique
+  no card) com nota em estrelas, comentário e selo de "Compra verificada"
+  quando o avaliador já tem um pedido com aquele produto. Um usuário só pode
+  ter uma avaliação por produto (enviar de novo edita a existente) e só pode
+  remover a própria.
+- **Cupom de desconto**: campo de cupom no carrinho e no checkout. Cupons de
+  demonstração já cadastrados em `js/data.js` (`COUPONS`):
+  `NEXUS10` (10% off), `BEMVINDO20` (20% off) e `FRETEGRATIS` (frete grátis).
+- **Página de detalhe do produto**: modal com descrição completa, seletor de
+  quantidade, ação de favoritar e a seção de avaliações — tudo no mesmo lugar,
+  acessado clicando em qualquer card da vitrine.
+
+## Acessibilidade
+
+- **Link "pular para o conteúdo"**: primeiro elemento focável da página,
+  visível apenas ao navegar por teclado (Tab), leva direto para `#mainContent`.
+- **Contraste de texto**: a cor `--text-faint`, usada em textos secundários
+  (datas, contadores, legendas), foi ajustada para atingir 4,5:1 de contraste
+  contra o fundo (mínimo recomendado pelo WCAG AA para texto normal).
+- **Navegação por teclado**:
+  - `Esc` fecha o modal aberto, o carrinho ou o menu mobile, na ordem.
+  - Modal e carrinho prendem o foco enquanto abertos (Tab/Shift+Tab não
+    escapam para o conteúdo por trás) e devolvem o foco ao elemento que os
+    abriu ao fechar.
+  - O carrossel de manchetes responde às setas ← → quando focado (via Tab
+    ou clique), além dos botões de seta e dos indicadores.
+- **Rótulos ARIA**: todo botão que só tem ícone (curtir, remover do
+  carrinho, aumentar/diminuir quantidade, fechar modal, paginação, setas do
+  carrossel, mostrar/ocultar senha) tem `aria-label` correspondente; o botão
+  de curtir usa `aria-pressed` para expor o estado.
+- Os cartões de cor do banner (perfil) agora são `<button>` reais — antes
+  eram `<span>`, inacessíveis por teclado.
+- Arte SVG decorativa (ilustrações de fundo por categoria) marcada com
+  `aria-hidden="true"` para não poluir a leitura por leitor de tela.
+
+## Infraestrutura (PWA, SEO social, performance)
+
+- **PWA instalável**: `manifest.json` + `sw.js` (Service Worker). Com o site
+  rodando em `http://localhost` (veja "Como rodar" acima), o navegador passa
+  a oferecer "Instalar app", e as páginas visitadas ficam disponíveis mesmo
+  offline (estratégia cache-first para o app shell). Existe também uma
+  `offline.html` de fallback para quando não há cache disponível.
+  > Service Workers exigem contexto seguro — não funcionam abrindo o
+  > `index.html` direto do disco (`file://`). O site continua funcionando
+  > normalmente nesse caso, só sem o recurso de instalação/offline.
+- **Open Graph e Twitter Card**: `assets/og-image.png` (1200×630) + meta tags
+  no `<head>`, para o link do site aparecer com título, descrição e imagem ao
+  ser compartilhado no WhatsApp, Discord, X/Twitter etc.
+- **Favicon completo**: `favicon.ico`, PNGs em 16/32/192/512px e
+  `apple-touch-icon` para todos os contextos (aba do navegador, atalho no
+  celular, ícone do app instalado).
+- **Lazy loading**: avatares carregados dentro de modais (comentários) usam
+  `loading="lazy" decoding="async"` para não bloquear o carregamento inicial.
+- **Paginação real**: a grade de notícias e a vitrine da loja usam paginação
+  numerada (com "…" para muitas páginas) em vez de carregar tudo de uma vez,
+  reduzindo a quantidade de DOM renderizado por vez.
+
+## Funcionalidades implementadas
 **Autenticação**
 - Cadastro e login com validação de campos em tempo real (formato de e-mail,
   força de senha com medidor visual, confirmação de senha).

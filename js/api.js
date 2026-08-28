@@ -27,6 +27,7 @@ const Api = {
       comments.push({
         id: Utils.uid('c'),
         articleId,
+        parentId: null,
         userId: 'system',
         username: a.name,
         avatar: Utils.avatarDataUri(a.name, a.bg),
@@ -37,8 +38,40 @@ const Api = {
         likes: []
       });
     });
+    if (comments[0]){
+      comments.push({
+        id: Utils.uid('c'),
+        articleId: comments[0].articleId,
+        parentId: comments[0].id,
+        userId: 'system',
+        username: 'Nyra',
+        avatar: Utils.avatarDataUri('Nyra', '#3fa9ff'),
+        text: 'Concordo, dava pra ver isso vindo desde a última janela de transferências.',
+        createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+        likes: []
+      });
+    }
     DB.saveComments(comments);
     DB.saveArticleLikes({});
+
+    const reviews = [
+      { productId: 'p1', name: 'RedShift', bg: '#ff3b5c', rating: 5, text: 'Sensor extremamente preciso, uso há 3 meses em jogos competitivos e não travou uma vez.' },
+      { productId: 'p1', name: 'Vhex', bg: '#ffb93d', rating: 4, text: 'Ótimo mouse, só achei o cabo um pouco rígido no começo, mas depois amacia.' },
+      { productId: 'p3', name: 'Kaelen', bg: '#2fd9c7', rating: 5, text: 'Som do switch é viciante e o hot-swap facilitou muito trocar pra um switch mais silencioso.' },
+      { productId: 'p5', name: 'Nyra', bg: '#3fa9ff', rating: 4, text: 'Áudio posicional ajudou bastante a identificar passos em jogos táticos.' }
+    ];
+    DB.saveReviews(reviews.map((r, i) => ({
+      id: Utils.uid('rev'),
+      productId: r.productId,
+      userId: 'system',
+      username: r.name,
+      avatar: Utils.avatarDataUri(r.name, r.bg),
+      rating: r.rating,
+      text: r.text,
+      verified: true,
+      createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 30).toISOString()
+    })));
+
     DB.markSeeded();
   },
 
@@ -153,6 +186,20 @@ const Api = {
     return list.map(n => ({ ...n, likeCount: n.likes + (likesMap[n.id]?.length || 0) }));
   },
 
+  async subscribeNewsletter(email){
+    await Utils.delay(400);
+    email = email.trim().toLowerCase();
+    if (!Utils.isValidEmail(email)){
+      throw { message: 'Informe um e-mail válido.' };
+    }
+    const list = DB.getNewsletterSubs();
+    if (!list.includes(email)){
+      list.push(email);
+      DB.saveNewsletterSubs(list);
+    }
+    return true;
+  },
+
   async getArticle(id){
     await Utils.delay(200);
     const art = NEWS.find(n => n.id === id);
@@ -178,7 +225,7 @@ const Api = {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
-  async addComment(articleId, user, text){
+  async addComment(articleId, user, text, parentId = null){
     await Utils.delay(260);
     text = text.trim();
     if (!text) throw { message: 'Escreva algo antes de comentar.' };
@@ -186,6 +233,7 @@ const Api = {
     const comment = {
       id: Utils.uid('c'),
       articleId,
+      parentId: parentId || null,
       userId: user.id,
       username: user.username,
       avatar: user.avatar,
@@ -247,5 +295,91 @@ const Api = {
     DB.saveOrders(list);
     DB.saveCart(ownerKey, []);
     return record;
+  },
+
+  hasPurchased(ownerKey, productId){
+    return DB.getOrders().some(o => o.ownerKey === ownerKey && (o.items || []).some(i => i.productId === productId));
+  },
+
+  /* ---------------- lista de desejos ---------------- */
+  async getWishlist(ownerKey){
+    await Utils.delay(150);
+    return DB.getWishlist(ownerKey);
+  },
+
+  async toggleWishlist(ownerKey, productId){
+    await Utils.delay(150);
+    const list = DB.getWishlist(ownerKey);
+    const has = list.includes(productId);
+    const updated = has ? list.filter(id => id !== productId) : [...list, productId];
+    DB.saveWishlist(ownerKey, updated);
+    return { inWishlist: !has, list: updated };
+  },
+
+  /* ---------------- avaliações de produtos ---------------- */
+  async getReviews(productId){
+    await Utils.delay(220);
+    return DB.getReviews()
+      .filter(r => r.productId === productId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async addReview(productId, user, { rating, text }){
+    await Utils.delay(300);
+    rating = Number(rating);
+    text = (text || '').trim();
+    if (!rating || rating < 1 || rating > 5){
+      throw { field: 'rating', message: 'Escolha uma nota de 1 a 5 estrelas.' };
+    }
+    if (text.length < 5){
+      throw { field: 'text', message: 'Escreva um comentário um pouco mais detalhado.' };
+    }
+    if (text.length > 400){
+      throw { field: 'text', message: 'Comentário muito longo (máx. 400 caracteres).' };
+    }
+    const list = DB.getReviews();
+    const existing = list.find(r => r.productId === productId && r.userId === user.id);
+    const verified = this.hasPurchased(user.id, productId);
+
+    if (existing){
+      existing.rating = rating;
+      existing.text = text;
+      existing.createdAt = new Date().toISOString();
+      existing.verified = verified;
+      DB.saveReviews(list);
+      return existing;
+    }
+    const review = {
+      id: Utils.uid('rev'),
+      productId,
+      userId: user.id,
+      username: user.username,
+      avatar: user.avatar,
+      rating, text, verified,
+      createdAt: new Date().toISOString()
+    };
+    list.push(review);
+    DB.saveReviews(list);
+    return review;
+  },
+
+  async deleteReview(reviewId, userId){
+    await Utils.delay(200);
+    const list = DB.getReviews();
+    const r = list.find(x => x.id === reviewId);
+    if (!r) throw { message: 'Avaliação não encontrada.' };
+    if (r.userId !== userId) throw { message: 'Você só pode remover suas próprias avaliações.' };
+    DB.saveReviews(list.filter(x => x.id !== reviewId));
+    return true;
+  },
+
+  /* ---------------- cupom de desconto ---------------- */
+  async applyCoupon(code){
+    await Utils.delay(400);
+    const found = COUPONS.find(c => c.code === String(code).trim().toUpperCase());
+    if (!found){
+      throw { message: 'Cupom inválido ou expirado.' };
+    }
+    return found;
   }
 };

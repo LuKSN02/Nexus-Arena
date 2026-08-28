@@ -5,6 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nexus Arena — Notícias de E-Sports e Loja Gamer</title>
 <meta name="description" content="Portal de notícias de e-sports com loja integrada de periféricos e itens gamers.">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0d14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nexus Arena">
+
+<!-- Open Graph / compartilhamento (WhatsApp, Discord, Facebook...) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nexus Arena">
+<meta property="og:title" content="Nexus Arena — Notícias de E-Sports e Loja Gamer">
+<meta property="og:description" content="Cobertura completa de League of Legends, CS2, Valorant e mais, com loja integrada de periféricos gamers.">
+<meta property="og:image" content="assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="pt_BR">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Nexus Arena — Notícias de E-Sports e Loja Gamer">
+<meta name="twitter:description" content="Cobertura completa de League of Legends, CS2, Valorant e mais, com loja integrada de periféricos gamers.">
+<meta name="twitter:image" content="assets/og-image.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
@@ -12,10 +37,11 @@
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
-<meta name="theme-color" content="#0a0d14">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<a href="#mainContent" class="skip-link">Pular para o conteúdo</a>
 
 <!-- ================= TOASTS ================= -->
 <div id="toastStack" class="toast-stack" aria-live="polite"></div>
@@ -107,7 +133,7 @@
 
   <header class="navbar">
     <div class="container navbar__inner">
-      <button class="icon-btn hamburger" id="mobileMenuBtn" aria-label="Abrir menu"></button>
+      <button class="icon-btn hamburger" id="mobileMenuBtn" aria-label="Abrir menu" aria-expanded="false" aria-controls="navLinks"></button>
 
       <div class="brand">
         <img class="brand__mark" src="assets/icon-64.png" alt="" style="border-radius:8px;">
@@ -121,10 +147,16 @@
 
       <div class="navbar__spacer"></div>
 
-      <div class="search-box">
+      <div class="search-box" id="searchBoxWrap">
         <span id="searchIcon"></span>
-        <input type="text" id="searchInput" placeholder="Buscar notícias ou produtos...">
+        <input type="text" id="searchInput" placeholder="Buscar notícias ou produtos..." aria-label="Buscar notícias ou produtos" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="searchDropdown">
+        <div class="search-dropdown hidden" id="searchDropdown" role="listbox"></div>
       </div>
+
+      <button class="icon-btn" id="wishlistBtn" aria-label="Abrir lista de desejos">
+        <span id="wishlistIcon"></span>
+        <span class="badge-count hidden" id="wishlistCount">0</span>
+      </button>
 
       <button class="icon-btn" id="cartBtn" aria-label="Abrir carrinho">
         <span id="cartIcon"></span>
@@ -143,7 +175,7 @@
     </div>
   </header>
 
-  <main id="mainContent"></main>
+  <main id="mainContent" tabindex="-1"></main>
 
   <footer class="site-footer">
     <div class="container">
@@ -170,6 +202,7 @@
         <div>
           <h5>CONTA</h5>
           <a href="#" id="footerProfileLink">Meu perfil</a>
+          <a href="#" id="footerWishlistLink">Lista de desejos</a>
           <a href="#" id="footerCartLink">Meu carrinho</a>
         </div>
       </div>
@@ -183,10 +216,10 @@
 
 <!-- ================= CARRINHO (drawer) ================= -->
 <div class="overlay" id="cartOverlay"></div>
-<aside class="drawer" id="cartDrawer">
+<aside class="drawer" id="cartDrawer" role="dialog" aria-modal="true" aria-labelledby="cartDrawerTitle" aria-hidden="true">
   <div class="drawer__head">
-    <h3><span id="drawerCartIcon"></span>Seu carrinho</h3>
-    <button class="modal__close" id="closeCartBtn"></button>
+    <h3 id="cartDrawerTitle"><span id="drawerCartIcon"></span>Seu carrinho</h3>
+    <button class="modal__close" id="closeCartBtn" aria-label="Fechar carrinho"></button>
   </div>
   <div class="drawer__body" id="cartBody"></div>
   <div class="drawer__foot" id="cartFoot"></div>
@@ -202,5 +235,17 @@
 <script src="js/data.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
+<script>
+  // Registra o Service Worker (PWA/offline). Só funciona em contexto seguro
+  // (http://localhost ou https://) — em file:// o navegador ignora e o site
+  // continua funcionando normalmente, só sem o recurso offline/instalável.
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {
+        console.info('Service Worker não registrado (normal ao abrir via file://).');
+      });
+    });
+  }
+</script>
 </body>
 </html>

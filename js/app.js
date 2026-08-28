@@ -13,15 +13,20 @@ const State = {
   searchQuery: '',
   heroIndex: 0,
   heroTimer: null,
-  visibleArticles: 6,
+  articlePage: 1,
+  productPage: 1,
   cart: [],
+  wishlist: [],
+  coupon: null,
   maxPrice: 700,
   checkoutStep: 1,
   paymentMethod: 'card',
   shippingData: null,
   lastOrder: null,
   articles: [],
-  products: []
+  products: [],
+  lastFocused: null,
+  activeTrap: null
 };
 
 const NAV_ITEMS = [
@@ -29,7 +34,98 @@ const NAV_ITEMS = [
   { view: 'shop', icon: 'box', label: 'Loja' }
 ];
 
+const PAGE_SIZE_ARTICLES = 6;
+const PAGE_SIZE_PRODUCTS = 6;
+
 function cartOwnerKey(){ return State.user ? State.user.id : 'guest'; }
+
+/* ============================================================================
+   PAGINAÇÃO — helper genérico reutilizado pela grade de notícias e de produtos
+   ========================================================================== */
+function paginate(list, page, pageSize){
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const safePage = Utils.clamp(page, 1, totalPages);
+  const start = (safePage - 1) * pageSize;
+  return { pageItems: list.slice(start, start + pageSize), page: safePage, totalPages };
+}
+
+/* Gera a lista de números a mostrar no paginador, com reticências para
+   intervalos longos — ex: 1 … 4 5 [6] 7 8 … 14 */
+function pagerNumbers(current, total){
+  const delta = 1;
+  const range = [];
+  for (let i = 1; i <= total; i++){
+    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) range.push(i);
+  }
+  const withDots = [];
+  let prev = 0;
+  range.forEach(i => {
+    if (prev){
+      if (i - prev === 2) withDots.push(prev + 1);
+      else if (i - prev > 2) withDots.push('…');
+    }
+    withDots.push(i);
+    prev = i;
+  });
+  return withDots;
+}
+
+function renderPager(containerId, current, totalPages, onChange){
+  const el = $('#' + containerId);
+  if (!el) return;
+  if (totalPages <= 1){ el.innerHTML = ''; return; }
+
+  const nums = pagerNumbers(current, totalPages);
+  el.innerHTML = `
+    <button class="pager__nav" data-pager-prev ${current === 1 ? 'disabled' : ''} aria-label="Página anterior">${Icons.svg('chevronLeft', 15)}</button>
+    ${nums.map(n => n === '…'
+      ? `<span class="pager__dots">…</span>`
+      : `<button class="pager__num ${n === current ? 'active' : ''}" data-pager-num="${n}" aria-label="Ir para página ${n}" ${n === current ? 'aria-current="page"' : ''}>${n}</button>`
+    ).join('')}
+    <button class="pager__nav" data-pager-next ${current === totalPages ? 'disabled' : ''} aria-label="Próxima página">${Icons.svg('chevronRight', 15)}</button>
+  `;
+  el.querySelectorAll('[data-pager-num]').forEach(b => b.addEventListener('click', () => onChange(Number(b.dataset.pagerNum))));
+  const prevBtn = el.querySelector('[data-pager-prev]');
+  const nextBtn = el.querySelector('[data-pager-next]');
+  if (prevBtn && !prevBtn.disabled) prevBtn.addEventListener('click', () => onChange(current - 1));
+  if (nextBtn && !nextBtn.disabled) nextBtn.addEventListener('click', () => onChange(current + 1));
+}
+
+/* ============================================================================
+   ACESSIBILIDADE — foco preso em overlays (modal/carrinho) e tecla Esc
+   ========================================================================== */
+function getFocusable(container){
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null);
+}
+
+function trapFocusKeydown(e, container){
+  const focusable = getFocusable(container);
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
+
+function bindAccessibilityEvents(){
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape'){
+      if (!$('#searchDropdown').classList.contains('hidden')){ closeSearchDropdown(); return; }
+      if ($('#modalRoot').classList.contains('show')){ closeModal(); return; }
+      if ($('#cartDrawer').classList.contains('show')){ closeCart(); return; }
+      if ($('#navLinks').classList.contains('mobile-open')){
+        $('#navLinks').classList.remove('mobile-open');
+        $('#mobileMenuBtn').setAttribute('aria-expanded', 'false');
+        $('#mobileMenuBtn').focus();
+        return;
+      }
+    }
+    if (e.key === 'Tab' && State.activeTrap){
+      trapFocusKeydown(e, State.activeTrap);
+    }
+  });
+}
 
 /* ============================================================================
    BOOTSTRAP
@@ -43,6 +139,7 @@ async function init(){
   bindAuthEvents();
   bindShellEvents();
   bindGlobalDelegatedEvents();
+  bindAccessibilityEvents();
 
   const current = Api.getCurrentUser();
   if (current){
@@ -58,6 +155,7 @@ async function init(){
 function fillStaticIcons(){
   $('#searchIcon').innerHTML = Icons.svg('search', 16);
   $('#cartIcon').innerHTML = Icons.svg('cart', 18);
+  $('#wishlistIcon').innerHTML = Icons.svg('heart', 18);
   $('#drawerCartIcon').innerHTML = Icons.svg('cart', 17);
   $('#mobileMenuBtn').innerHTML = Icons.svg('menu', 18);
   $all('.modal__close').forEach(b => b.innerHTML = Icons.svg('close', 15));
@@ -76,13 +174,15 @@ function showAuthScreen(){
   $('#authScreen').classList.remove('hidden');
 }
 
-function enterApp(){
+async function enterApp(){
   $('#authScreen').classList.add('hidden');
   $('#appShell').classList.remove('hidden');
   updateProfileChip();
   buildTicker();
   navigateTo('home');
   renderCartDrawer();
+  State.wishlist = await Api.getWishlist(cartOwnerKey());
+  renderWishlistBadge();
 }
 
 function switchAuthTab(tab){
@@ -134,6 +234,7 @@ function bindAuthEvents(){
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.innerHTML = Icons.svg(show ? 'eyeOff' : 'eye', 16);
+      btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
     });
   });
 
@@ -244,7 +345,8 @@ function bindAuthEvents(){
    ========================================================================== */
 function bindShellEvents(){
   $('#mobileMenuBtn').addEventListener('click', () => {
-    $('#navLinks').classList.toggle('mobile-open');
+    const open = $('#navLinks').classList.toggle('mobile-open');
+    $('#mobileMenuBtn').setAttribute('aria-expanded', String(open));
   });
 
   $('#navLinks').addEventListener('click', (e) => {
@@ -252,21 +354,35 @@ function bindShellEvents(){
     if (!btn) return;
     navigateTo(btn.dataset.view);
     $('#navLinks').classList.remove('mobile-open');
+    $('#mobileMenuBtn').setAttribute('aria-expanded', 'false');
   });
 
   $('#searchInput').addEventListener('input', Utils.debounce((e) => {
     State.searchQuery = e.target.value.trim().toLowerCase();
+    State.articlePage = 1;
+    State.productPage = 1;
+    renderSearchDropdown(State.searchQuery);
     if (State.view === 'home') renderHomeView();
     else if (State.view === 'shop') renderShopView();
   }, 260));
 
+  $('#searchInput').addEventListener('focus', () => {
+    if (State.searchQuery) renderSearchDropdown(State.searchQuery);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#searchBoxWrap')) closeSearchDropdown();
+  });
+
   $('#cartBtn').addEventListener('click', openCart);
+  $('#wishlistBtn').addEventListener('click', openWishlistModal);
   $('#closeCartBtn').addEventListener('click', closeCart);
   $('#cartOverlay').addEventListener('click', () => { closeCart(); closeModal(); });
 
   $('#profileChip').addEventListener('click', openProfilePanel);
 
   $('#footerProfileLink').addEventListener('click', (e) => { e.preventDefault(); openProfilePanel(); });
+  $('#footerWishlistLink').addEventListener('click', (e) => { e.preventDefault(); openWishlistModal(); });
   $('#footerCartLink').addEventListener('click', (e) => { e.preventDefault(); openCart(); });
 
   $all('[data-footer-view]').forEach(a => {
@@ -278,6 +394,72 @@ function bindShellEvents(){
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
+}
+
+/* ============================================================================
+   BUSCA — dropdown de resultados ao vivo (notícias + produtos)
+   ========================================================================== */
+function renderSearchDropdown(query){
+  const dropdown = $('#searchDropdown');
+  const input = $('#searchInput');
+  if (!query || query.length < 2){ closeSearchDropdown(); return; }
+
+  const newsMatches = NEWS.filter(n => n.title.toLowerCase().includes(query)).slice(0, 4);
+  const productMatches = PRODUCTS.filter(p => p.name.toLowerCase().includes(query)).slice(0, 4);
+
+  if (!newsMatches.length && !productMatches.length){
+    dropdown.innerHTML = `<div class="search-dropdown__empty">Nenhum resultado para "${Utils.escapeHtml(query)}".</div>`;
+  } else {
+    let html = '';
+    if (newsMatches.length){
+      html += `<div class="search-dropdown__group-label">NOTÍCIAS</div>`;
+      html += newsMatches.map(n => `
+        <button type="button" class="search-dropdown__item" data-search-article="${n.id}" role="option">
+          <span class="search-dropdown__item-media">${gameArt(n.category, n.id)}</span>
+          <span>
+            <span class="search-dropdown__item-title">${Utils.escapeHtml(n.title)}</span>
+            <span class="search-dropdown__item-sub">${catInfo(n.category).label}</span>
+          </span>
+        </button>`).join('');
+    }
+    if (productMatches.length){
+      html += `<div class="search-dropdown__group-label">PRODUTOS</div>`;
+      html += productMatches.map(p => {
+        const c = PRODUCT_CATS.find(pc => pc.key === p.category);
+        return `
+        <button type="button" class="search-dropdown__item" data-search-product="${p.id}" role="option">
+          <span class="search-dropdown__item-media">${Icons.svg(c.icon, 18)}</span>
+          <span>
+            <span class="search-dropdown__item-title">${Utils.escapeHtml(p.name)}</span>
+            <span class="search-dropdown__item-sub">${Utils.brl(p.price)}</span>
+          </span>
+        </button>`;
+      }).join('');
+    }
+    dropdown.innerHTML = html;
+  }
+
+  dropdown.classList.remove('hidden');
+  input.setAttribute('aria-expanded', 'true');
+
+  $all('[data-search-article]', dropdown).forEach(b => b.addEventListener('click', () => {
+    closeSearchDropdown();
+    navigateTo('home');
+    openArticleModal(b.dataset.searchArticle);
+  }));
+  $all('[data-search-product]', dropdown).forEach(b => b.addEventListener('click', () => {
+    closeSearchDropdown();
+    navigateTo('shop');
+    openProductModal(b.dataset.searchProduct);
+  }));
+}
+
+function closeSearchDropdown(){
+  const dropdown = $('#searchDropdown');
+  if (!dropdown) return;
+  dropdown.classList.add('hidden');
+  dropdown.innerHTML = '';
+  $('#searchInput')?.setAttribute('aria-expanded', 'false');
 }
 
 function updateProfileChip(){
@@ -300,6 +482,7 @@ function buildTicker(){
    ROTEAMENTO DE VIEWS
    ========================================================================== */
 function navigateTo(view){
+  closeSearchDropdown();
   if (view === 'checkout'){
     const { items } = cartTotals();
     if (!items.length){
@@ -322,10 +505,10 @@ async function renderHomeView(){
   const main = $('#mainContent');
   main.innerHTML = `
     <div class="page container">
-      <div class="hero-carousel" id="heroCarousel">
+      <div class="hero-carousel" id="heroCarousel" tabindex="0" role="region" aria-roledescription="carrossel" aria-label="Manchetes em destaque">
         <div class="hero-track" id="heroTrack"></div>
-        <button class="hero-nav prev" id="heroPrev">${Icons.svg('chevronLeft', 18)}</button>
-        <button class="hero-nav next" id="heroNext">${Icons.svg('chevronRight', 18)}</button>
+        <button class="hero-nav prev" id="heroPrev" aria-label="Manchete anterior">${Icons.svg('chevronLeft', 18)}</button>
+        <button class="hero-nav next" id="heroNext" aria-label="Próxima manchete">${Icons.svg('chevronRight', 18)}</button>
         <div class="hero-dots" id="heroDots"></div>
       </div>
 
@@ -337,8 +520,29 @@ async function renderHomeView(){
         <div class="chip-row" id="categoryChips"></div>
       </div>
 
-      <div class="article-grid" id="articleGrid"></div>
-      <div class="load-more-wrap" id="loadMoreWrap"></div>
+      <div class="home-layout">
+        <div class="home-main">
+          <div class="article-grid" id="articleGrid"></div>
+          <div class="pager" id="articlePager"></div>
+        </div>
+        <aside class="home-sidebar">
+          <div class="sidebar-card">
+            <h3 class="sidebar-card__title">${Icons.svg('trending', 15)}Mais lidas da semana</h3>
+            <div id="trendingList"></div>
+          </div>
+          <div class="sidebar-card newsletter-card">
+            <h3 class="sidebar-card__title">${Icons.svg('mail', 15)}Newsletter</h3>
+            <p>Um resumo semanal das principais notícias de e-sports, direto no seu e-mail.</p>
+            <form id="newsletterForm">
+              <div class="field-input" id="newsletterWrap">
+                <input id="newsletterEmail" type="email" placeholder="seu@email.com" aria-label="E-mail para newsletter">
+              </div>
+              <div class="field-hint" id="newsletterHint"></div>
+              <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">Inscrever-se</button>
+            </form>
+          </div>
+        </aside>
+      </div>
     </div>
   `;
 
@@ -348,6 +552,48 @@ async function renderHomeView(){
   renderHeroCarousel(news.slice(0, 4));
   renderCategoryChips();
   renderArticleGrid();
+  renderTrendingList(news);
+  bindNewsletterForm();
+}
+
+function renderTrendingList(news){
+  const top = [...news]
+    .sort((a, b) => (b.likeCount + b.comments) - (a.likeCount + a.comments))
+    .slice(0, 5);
+  $('#trendingList').innerHTML = top.map((a, i) => `
+    <button type="button" class="trending-item" data-open-article="${a.id}">
+      <span class="trending-item__rank">${i + 1}</span>
+      <span class="trending-item__media">${gameArt(a.category, a.id)}</span>
+      <span class="trending-item__body">
+        <span class="trending-item__title">${Utils.escapeHtml(a.title)}</span>
+        <span class="trending-item__stats">${Icons.svg('heart', 11)} ${a.likeCount} · ${Icons.svg('comment', 11)} ${a.comments}</span>
+      </span>
+    </button>`).join('');
+}
+
+function bindNewsletterForm(){
+  const form = $('#newsletterForm');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#newsletterEmail').value.trim();
+    if (!Utils.isValidEmail(email)){
+      setFieldState('newsletterWrap', 'newsletterHint', 'error', 'Informe um e-mail válido.');
+      return;
+    }
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Inscrevendo...';
+    try{
+      await Api.subscribeNewsletter(email);
+      setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Inscrito! Fique de olho na sua caixa de entrada.');
+      form.reset();
+      Toast.show('Inscrição na newsletter confirmada.', 'success', 'mail');
+    }catch(err){
+      setFieldState('newsletterWrap', 'newsletterHint', 'error', err.message || 'Não foi possível concluir a inscrição.');
+    }finally{
+      btn.disabled = false; btn.textContent = 'Inscrever-se';
+    }
+  });
 }
 
 function renderCategoryChips(){
@@ -378,7 +624,7 @@ function renderHeroCarousel(slides){
       </div>
     </div>`).join('');
 
-  $('#heroDots').innerHTML = slides.map((_, i) => `<button class="${i === 0 ? 'active' : ''}" data-hero-dot="${i}"></button>`).join('');
+  $('#heroDots').innerHTML = slides.map((_, i) => `<button class="${i === 0 ? 'active' : ''}" data-hero-dot="${i}" aria-label="Ir para destaque ${i + 1}"></button>`).join('');
   State.heroIndex = 0;
   positionHero();
 
@@ -389,6 +635,12 @@ function renderHeroCarousel(slides){
   const carousel = $('#heroCarousel');
   carousel.addEventListener('mouseenter', () => clearInterval(State.heroTimer));
   carousel.addEventListener('mouseleave', () => restartHeroTimer(slides.length));
+  carousel.addEventListener('focusin', () => clearInterval(State.heroTimer));
+  carousel.addEventListener('focusout', () => restartHeroTimer(slides.length));
+  carousel.onkeydown = (e) => {
+    if (e.key === 'ArrowLeft'){ e.preventDefault(); $('#heroPrev').click(); }
+    else if (e.key === 'ArrowRight'){ e.preventDefault(); $('#heroNext').click(); }
+  };
   restartHeroTimer(slides.length);
 }
 
@@ -412,20 +664,23 @@ function filteredArticles(){
 
 function renderArticleGrid(){
   const list = filteredArticles();
-  const visible = list.slice(0, State.visibleArticles);
   const grid = $('#articleGrid');
 
-  if (!visible.length){
+  if (!list.length){
     grid.innerHTML = `<p style="grid-column:1/-1;text-align:center;padding:40px 0;">Nenhuma notícia encontrada para esse filtro.</p>`;
-    $('#loadMoreWrap').innerHTML = '';
+    $('#articlePager').innerHTML = '';
     return;
   }
 
-  grid.innerHTML = visible.map((a, i) => `
+  const { pageItems, page, totalPages } = paginate(list, State.articlePage, PAGE_SIZE_ARTICLES);
+  State.articlePage = page;
+  const baseIdx = (page - 1) * PAGE_SIZE_ARTICLES;
+
+  grid.innerHTML = pageItems.map((a, i) => `
     <article class="article-card" data-open-article="${a.id}">
       <div class="article-card__media">
         ${gameArt(a.category, a.id + i)}
-        <span class="article-card__idx">${String(i + 1).padStart(2, '0')}</span>
+        <span class="article-card__idx">${String(baseIdx + i + 1).padStart(2, '0')}</span>
       </div>
       <div class="article-card__body">
         <span class="article-card__cat">${catInfo(a.category).label}</span>
@@ -439,11 +694,11 @@ function renderArticleGrid(){
       </div>
     </article>`).join('');
 
-  $('#loadMoreWrap').innerHTML = list.length > visible.length
-    ? `<button class="btn btn-secondary" id="loadMoreBtn">Carregar mais notícias ${Icons.svg('chevronDown', 15)}</button>`
-    : '';
-  const moreBtn = $('#loadMoreBtn');
-  if (moreBtn) moreBtn.addEventListener('click', () => { State.visibleArticles += 6; renderArticleGrid(); });
+  renderPager('articlePager', page, totalPages, (newPage) => {
+    State.articlePage = newPage;
+    renderArticleGrid();
+    $('#articleGrid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 /* ============================================================================
@@ -454,6 +709,7 @@ async function openArticleModal(id){
   const comments = await Api.getComments(id);
   const likesMap = DB.getArticleLikes();
   const liked = State.user ? (likesMap[id] || []).includes(State.user.id) : false;
+  const related = NEWS.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
 
   openModal('lg', `
     <div class="article-hero-media">${gameArt(article.category, article.id)}</div>
@@ -467,10 +723,22 @@ async function openArticleModal(id){
       <div class="article-content">${article.content.map(p => `<p>${Utils.escapeHtml(p)}</p>`).join('')}</div>
 
       <div class="article-actions">
-        <button class="reaction-btn ${liked ? 'liked' : ''}" id="articleLikeBtn">${Icons.svg('heart', 15)}<span id="articleLikeCount">${article.likeCount}</span></button>
+        <button class="reaction-btn ${liked ? 'liked' : ''}" id="articleLikeBtn" aria-pressed="${liked}" aria-label="Curtir notícia">${Icons.svg('heart', 15)}<span id="articleLikeCount">${article.likeCount}</span></button>
         <button class="reaction-btn" id="articleShareBtn">${Icons.svg('share', 15)}Compartilhar</button>
         <button class="reaction-btn" id="articleBookmarkBtn">${Icons.svg('bookmark', 15)}Salvar</button>
       </div>
+
+      ${related.length ? `
+      <div class="related-section">
+        <h3 style="font-size:14px;margin-bottom:12px;">Notícias relacionadas</h3>
+        <div class="related-grid">
+          ${related.map(r => `
+            <button type="button" class="related-card" data-open-article="${r.id}">
+              <span class="related-card__media">${gameArt(r.category, r.id)}</span>
+              <span class="related-card__title">${Utils.escapeHtml(r.title)}</span>
+            </button>`).join('')}
+        </div>
+      </div>` : ''}
 
       <div class="comments">
         <h3>${Icons.svg('comment', 16)}Comentários (<span id="commentCount">${comments.length}</span>)</h3>
@@ -486,14 +754,41 @@ async function openArticleModal(id){
 
   renderCommentList(comments);
 
+  // Notícias relacionadas reabrem o modal com o novo artigo (delegado abaixo
+  // via bindGlobalDelegatedEvents, que já escuta [data-open-article]).
+
   $('#articleLikeBtn').addEventListener('click', async () => {
     if (!State.user) return Toast.show('Entre na sua conta para curtir.', 'warn');
     const res = await Api.toggleArticleLike(id, State.user.id);
     $('#articleLikeBtn').classList.toggle('liked', res.liked);
+    $('#articleLikeBtn').setAttribute('aria-pressed', String(res.liked));
     $('#articleLikeCount').textContent = article.likes + res.count;
     renderArticleGrid();
   });
-  $('#articleShareBtn').addEventListener('click', () => Toast.show('Link da notícia copiado para a área de transferência.', 'info', 'share'));
+
+  $('#articleShareBtn').addEventListener('click', async () => {
+    const shareData = {
+      title: article.title,
+      text: article.excerpt,
+      url: location.href
+    };
+    if (navigator.share){
+      try{ await navigator.share(shareData); }
+      catch(err){ /* usuário cancelou o compartilhamento — não é um erro */ }
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      try{
+        await navigator.clipboard.writeText(shareData.url);
+        Toast.show('Link copiado para a área de transferência.', 'success', 'share');
+      }catch(err){
+        Toast.show('Não foi possível copiar o link.', 'error');
+      }
+      return;
+    }
+    Toast.show('Compartilhamento não suportado neste navegador.', 'warn');
+  });
+
   $('#articleBookmarkBtn').addEventListener('click', (e) => {
     e.currentTarget.classList.toggle('liked');
     Toast.show('Notícia salva nos seus favoritos.', 'info', 'bookmark');
@@ -521,16 +816,18 @@ async function openArticleModal(id){
 
   function renderCommentList(list){
     const box = $('#commentList');
-    if (!list.length){
+    const topLevel = list.filter(c => !c.parentId);
+    if (!topLevel.length){
       box.innerHTML = `<p style="color:var(--text-faint);">Seja o primeiro a comentar.</p>`;
       return;
     }
-    box.innerHTML = list.map(c => {
+
+    const commentHtml = (c, isReply) => {
       const likedByMe = State.user && c.likes.includes(State.user.id);
       const mine = State.user && c.userId === State.user.id;
       return `
-      <div class="comment" data-comment-id="${c.id}">
-        <img class="avatar" src="${c.avatar}" width="34" height="34" alt="">
+      <div class="comment ${isReply ? 'comment--reply' : ''}" data-comment-id="${c.id}">
+        <img class="avatar" src="${c.avatar}" width="${isReply ? 26 : 34}" height="${isReply ? 26 : 34}" alt="" loading="lazy" decoding="async">
         <div class="comment__body">
           <div class="comment__head">
             <span class="comment__name">${Utils.escapeHtml(c.username)}</span>
@@ -539,11 +836,50 @@ async function openArticleModal(id){
           <p class="comment__text">${Utils.escapeHtml(c.text)}</p>
           <div class="comment__actions">
             <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${c.likes.length}</button>
+            ${!isReply ? `<button data-reply-to="${c.id}">${Icons.svg('comment', 13)} Responder</button>` : ''}
             ${mine ? `<button data-delete-comment="${c.id}">${Icons.svg('trash', 13)} Remover</button>` : ''}
           </div>
         </div>
       </div>`;
+    };
+
+    box.innerHTML = topLevel.map(c => {
+      const replies = list.filter(r => r.parentId === c.id).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      return `
+      <div class="comment-thread">
+        ${commentHtml(c, false)}
+        ${replies.length ? `<div class="comment-replies">${replies.map(r => commentHtml(r, true)).join('')}</div>` : ''}
+        ${State.user ? `
+          <div class="reply-form-wrap hidden" id="replyFormWrap-${c.id}">
+            <textarea id="replyInput-${c.id}" placeholder="Escreva uma resposta..." maxlength="500"></textarea>
+            <button class="btn btn-secondary btn-sm" data-reply-submit="${c.id}">Responder</button>
+          </div>` : ''}
+      </div>`;
     }).join('');
+
+    $all('[data-reply-to]').forEach(b => b.addEventListener('click', () => {
+      if (!State.user) return Toast.show('Entre na sua conta para responder.', 'warn');
+      const wrap = $('#replyFormWrap-' + b.dataset.replyTo);
+      wrap.classList.toggle('hidden');
+      if (!wrap.classList.contains('hidden')) $('#replyInput-' + b.dataset.replyTo).focus();
+    }));
+
+    $all('[data-reply-submit]').forEach(b => b.addEventListener('click', async () => {
+      const parentId = b.dataset.replySubmit;
+      const input = $('#replyInput-' + parentId);
+      b.disabled = true;
+      try{
+        await Api.addComment(id, State.user, input.value, parentId);
+        const fresh = await Api.getComments(id);
+        renderCommentList(fresh);
+        $('#commentCount').textContent = fresh.length;
+        Toast.show('Resposta publicada.', 'success');
+      }catch(err){
+        Toast.show(err.message || 'Não foi possível responder.', 'error');
+      }finally{
+        b.disabled = false;
+      }
+    }));
 
     $all('[data-like-comment]').forEach(b => b.addEventListener('click', async () => {
       if (!State.user) return Toast.show('Entre na sua conta para curtir.', 'warn');
@@ -587,6 +923,7 @@ async function renderShopView(){
         </aside>
         <div>
           <div class="product-grid" id="productGrid"></div>
+          <div class="pager" id="productPager"></div>
         </div>
       </div>
     </div>
@@ -598,6 +935,7 @@ async function renderShopView(){
 
   $('#priceSlider').addEventListener('input', (e) => {
     State.maxPrice = Number(e.target.value);
+    State.productPage = 1;
     $('#priceSliderVal').textContent = Utils.brl(State.maxPrice);
     renderProductGrid();
   });
@@ -619,6 +957,7 @@ function renderShopFilters(){
 
   $all('[data-shop-cat]').forEach(inp => inp.addEventListener('change', () => {
     State.shopCategory = inp.dataset.shopCat;
+    State.productPage = 1;
     renderProductGrid();
   }));
 }
@@ -638,30 +977,38 @@ function renderProductGrid(){
   const grid = $('#productGrid');
   if (!list.length){
     grid.innerHTML = `<p style="grid-column:1/-1;text-align:center;padding:40px 0;">Nenhum produto encontrado com esses filtros.</p>`;
+    $('#productPager').innerHTML = '';
     return;
   }
+  const { pageItems, page, totalPages } = paginate(list, State.productPage, PAGE_SIZE_PRODUCTS);
+  State.productPage = page;
+
   const catMeta = key => PRODUCT_CATS.find(c => c.key === key);
-  grid.innerHTML = list.map(p => {
+  grid.innerHTML = pageItems.map(p => {
     const c = catMeta(p.category);
+    const wished = State.wishlist.includes(p.id);
     return `
-    <div class="product-card" data-product-card="${p.id}">
+    <div class="product-card">
       ${p.tag ? `<span class="product-card__tag">${p.tag}</span>` : ''}
-      <div class="product-card__media" style="color:var(--teal)">${Icons.svg(c.icon, 56)}</div>
-      <div class="product-card__body">
-        <span class="product-card__cat">${c.label}</span>
-        <h4>${Utils.escapeHtml(p.name)}</h4>
-        <div class="product-card__rating">${Icons.svg('star', 13)} ${p.rating} <span class="mono">(${p.reviews})</span></div>
-        <div class="product-card__price-row">
-          <span class="price">${Utils.brl(p.price)}</span>
-          ${p.oldPrice ? `<span class="price-old">${Utils.brl(p.oldPrice)}</span>` : ''}
+      <button class="wishlist-toggle ${wished ? 'active' : ''}" data-wishlist-toggle="${p.id}" aria-label="${wished ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}" aria-pressed="${wished}">${Icons.svg('heart', 15)}</button>
+      <div class="product-card__clickable" data-open-product="${p.id}">
+        <div class="product-card__media" style="color:var(--teal)">${Icons.svg(c.icon, 56)}</div>
+        <div class="product-card__body">
+          <span class="product-card__cat">${c.label}</span>
+          <h4>${Utils.escapeHtml(p.name)}</h4>
+          <div class="product-card__rating">${Icons.svg('star', 13)} ${p.rating} <span class="mono">(${p.reviews})</span></div>
+          <div class="product-card__price-row">
+            <span class="price">${Utils.brl(p.price)}</span>
+            ${p.oldPrice ? `<span class="price-old">${Utils.brl(p.oldPrice)}</span>` : ''}
+          </div>
         </div>
       </div>
       <div class="product-card__foot">
         <div class="add-cart-row">
           <div class="qty-stepper">
-            <button type="button" data-qty-minus="${p.id}">${Icons.svg('minus', 13)}</button>
+            <button type="button" data-qty-minus="${p.id}" aria-label="Diminuir quantidade">${Icons.svg('minus', 13)}</button>
             <span id="qty-${p.id}">1</span>
-            <button type="button" data-qty-plus="${p.id}">${Icons.svg('plus', 13)}</button>
+            <button type="button" data-qty-plus="${p.id}" aria-label="Aumentar quantidade">${Icons.svg('plus', 13)}</button>
           </div>
           <button class="btn btn-primary btn-sm" data-add-cart="${p.id}">${Icons.svg('cart', 14)} Adicionar</button>
         </div>
@@ -681,6 +1028,17 @@ function renderProductGrid(){
     const qty = Number($('#qty-' + b.dataset.addCart).textContent);
     addToCart(b.dataset.addCart, qty);
   }));
+  $all('[data-wishlist-toggle]').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleWishlist(b.dataset.wishlistToggle);
+  }));
+  $all('[data-open-product]').forEach(el => el.addEventListener('click', () => openProductModal(el.dataset.openProduct)));
+
+  renderPager('productPager', page, totalPages, (newPage) => {
+    State.productPage = newPage;
+    renderProductGrid();
+    $('#productGrid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 /* ============================================================================
@@ -715,12 +1073,18 @@ function setCartQty(productId, qty){
 function cartTotals(){
   const items = State.cart.map(i => ({ ...i, product: PRODUCTS.find(p => p.id === i.productId) })).filter(i => i.product);
   const subtotal = items.reduce((sum, i) => sum + i.product.price * i.qty, 0);
-  const shipping = subtotal === 0 ? 0 : (subtotal >= 300 ? 0 : 24.9);
-  return { items, subtotal, shipping, total: subtotal + shipping };
+  let shipping = subtotal === 0 ? 0 : (subtotal >= 300 ? 0 : 24.9);
+  let discount = 0;
+  if (State.coupon && subtotal > 0){
+    if (State.coupon.type === 'percent') discount = subtotal * (State.coupon.value / 100);
+    else if (State.coupon.type === 'shipping') shipping = 0;
+  }
+  const total = Math.max(0, subtotal - discount + shipping);
+  return { items, subtotal, shipping, discount, total };
 }
 
 function renderCartDrawer(){
-  const { items, subtotal, shipping, total } = cartTotals();
+  const { items, subtotal, shipping, discount, total } = cartTotals();
   const count = items.reduce((s, i) => s + i.qty, 0);
   $('#cartCount').textContent = count;
   $('#cartCount').classList.toggle('hidden', count === 0);
@@ -747,19 +1111,26 @@ function renderCartDrawer(){
         <div class="cart-item__cat">${c.label}</div>
         <div class="cart-item__row">
           <div class="qty-stepper">
-            <button type="button" data-cart-minus="${i.productId}">${Icons.svg('minus', 12)}</button>
+            <button type="button" data-cart-minus="${i.productId}" aria-label="Diminuir quantidade">${Icons.svg('minus', 12)}</button>
             <span>${i.qty}</span>
-            <button type="button" data-cart-plus="${i.productId}">${Icons.svg('plus', 12)}</button>
+            <button type="button" data-cart-plus="${i.productId}" aria-label="Aumentar quantidade">${Icons.svg('plus', 12)}</button>
           </div>
           <span class="price" style="font-size:14px;">${Utils.brl(i.product.price * i.qty)}</span>
         </div>
       </div>
-      <button class="cart-item__remove" data-cart-remove="${i.productId}">${Icons.svg('trash', 15)}</button>
+      <button class="cart-item__remove" data-cart-remove="${i.productId}" aria-label="Remover ${Utils.escapeHtml(i.product.name)} do carrinho">${Icons.svg('trash', 15)}</button>
     </div>`;
   }).join('');
 
   $('#cartFoot').innerHTML = `
+    <div class="coupon-row">
+      ${State.coupon
+        ? `<div class="coupon-applied"><span>${Icons.svg('tag', 13)} ${State.coupon.code} aplicado</span><button type="button" id="removeCouponBtn" aria-label="Remover cupom">${Icons.svg('close', 12)}</button></div>`
+        : `<div class="field-input" id="couponWrap"><input id="couponInput" placeholder="Cupom de desconto"><button type="button" class="btn btn-ghost btn-sm" id="applyCouponBtn" style="margin:4px;">Aplicar</button></div>`
+      }
+    </div>
     <div class="summary-row"><span>Subtotal</span><span class="mono">${Utils.brl(subtotal)}</span></div>
+    ${discount > 0 ? `<div class="summary-row" style="color:var(--teal);"><span>Desconto</span><span class="mono">-${Utils.brl(discount)}</span></div>` : ''}
     <div class="summary-row"><span>Frete</span><span class="mono">${shipping === 0 ? 'Grátis' : Utils.brl(shipping)}</span></div>
     <div class="summary-row total"><span>Total</span><span class="price">${Utils.brl(total)}</span></div>
     <button class="btn btn-primary btn-block" id="goCheckoutBtn" style="margin-top:14px;">Finalizar compra ${Icons.svg('arrowRight', 15)}</button>
@@ -775,6 +1146,11 @@ function renderCartDrawer(){
   }));
   $all('[data-cart-remove]').forEach(b => b.addEventListener('click', () => removeFromCart(b.dataset.cartRemove)));
 
+  const applyCouponBtn = $('#applyCouponBtn');
+  if (applyCouponBtn) applyCouponBtn.addEventListener('click', () => applyCouponFlow($('#couponInput').value, renderCartDrawer));
+  const removeCouponBtn = $('#removeCouponBtn');
+  if (removeCouponBtn) removeCouponBtn.addEventListener('click', () => { State.coupon = null; renderCartDrawer(); Toast.show('Cupom removido.', 'info'); });
+
   const goCheckout = $('#goCheckoutBtn');
   if (goCheckout) goCheckout.addEventListener('click', () => {
     closeCart();
@@ -783,21 +1159,255 @@ function renderCartDrawer(){
   });
 }
 
+async function applyCouponFlow(code, onDone){
+  if (!code || !code.trim()) return Toast.show('Digite um código de cupom.', 'warn');
+  try{
+    const coupon = await Api.applyCoupon(code);
+    State.coupon = coupon;
+    Toast.show(`Cupom aplicado: ${coupon.label}.`, 'success', 'tag');
+    onDone();
+  }catch(err){
+    Toast.show(err.message || 'Não foi possível aplicar o cupom.', 'error');
+  }
+}
+
 function openCart(){
   renderCartDrawer();
+  State.lastFocused = document.activeElement;
   $('#cartOverlay').classList.add('show');
   $('#cartDrawer').classList.add('show');
+  $('#cartDrawer').setAttribute('aria-hidden', 'false');
+  State.activeTrap = $('#cartDrawer');
+  requestAnimationFrame(() => {
+    const focusable = getFocusable($('#cartDrawer'));
+    (focusable[0] || $('#cartDrawer')).focus();
+  });
 }
 function closeCart(){
   $('#cartOverlay').classList.remove('show');
   $('#cartDrawer').classList.remove('show');
+  $('#cartDrawer').setAttribute('aria-hidden', 'true');
+  if (State.activeTrap === $('#cartDrawer')) State.activeTrap = null;
+  if (State.lastFocused){ State.lastFocused.focus(); State.lastFocused = null; }
+}
+
+/* ============================================================================
+   LISTA DE DESEJOS
+   ========================================================================== */
+function renderWishlistBadge(){
+  $('#wishlistCount').textContent = State.wishlist.length;
+  $('#wishlistCount').classList.toggle('hidden', State.wishlist.length === 0);
+}
+
+async function toggleWishlist(productId){
+  if (!State.user) return Toast.show('Entre na sua conta para usar a lista de desejos.', 'warn');
+  const res = await Api.toggleWishlist(cartOwnerKey(), productId);
+  State.wishlist = res.list;
+  renderWishlistBadge();
+  const product = PRODUCTS.find(p => p.id === productId);
+  Toast.show(res.inWishlist ? `${product.name} adicionado aos favoritos.` : `${product.name} removido dos favoritos.`, 'info', 'heart');
+  $all(`[data-wishlist-toggle="${productId}"]`).forEach(b => {
+    b.classList.toggle('active', res.inWishlist);
+    b.setAttribute('aria-pressed', String(res.inWishlist));
+  });
+}
+
+function openWishlistModal(){
+  const items = State.wishlist.map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean);
+  if (!items.length){
+    openModal('sm', `
+      <div class="cart-empty">
+        ${Icons.svg('heart', 40)}
+        <p>Sua lista de desejos está vazia.</p>
+      </div>`, 'Lista de desejos');
+    return;
+  }
+  openModal('md', `
+    <div class="wishlist-list">
+      ${items.map(p => {
+        const c = PRODUCT_CATS.find(pc => pc.key === p.category);
+        return `
+        <div class="cart-item" data-wishlist-row="${p.id}">
+          <div class="cart-item__media">${Icons.svg(c.icon, 26)}</div>
+          <div class="cart-item__info">
+            <div class="cart-item__name">${Utils.escapeHtml(p.name)}</div>
+            <div class="cart-item__cat">${c.label}</div>
+            <div class="cart-item__row">
+              <span class="price" style="font-size:14px;">${Utils.brl(p.price)}</span>
+              <button class="btn btn-primary btn-sm" data-wishlist-add-cart="${p.id}">${Icons.svg('cart', 13)} Adicionar</button>
+            </div>
+          </div>
+          <button class="cart-item__remove" data-wishlist-remove="${p.id}" aria-label="Remover ${Utils.escapeHtml(p.name)} da lista de desejos">${Icons.svg('trash', 15)}</button>
+        </div>`;
+      }).join('')}
+    </div>
+  `, 'Lista de desejos');
+
+  $all('[data-wishlist-add-cart]').forEach(b => b.addEventListener('click', () => {
+    addToCart(b.dataset.wishlistAddCart, 1);
+  }));
+  $all('[data-wishlist-remove]').forEach(b => b.addEventListener('click', async () => {
+    await toggleWishlist(b.dataset.wishlistRemove);
+    const row = $(`[data-wishlist-row="${b.dataset.wishlistRemove}"]`);
+    if (row) row.remove();
+    if (!State.wishlist.length){
+      $('#modalRoot .modal__body').innerHTML = `
+        <div class="cart-empty">
+          ${Icons.svg('heart', 40)}
+          <p>Sua lista de desejos está vazia.</p>
+        </div>`;
+    }
+  }));
+}
+
+/* ============================================================================
+   MODAL DE DETALHE DO PRODUTO + AVALIAÇÕES
+   ========================================================================== */
+function starIcon(filled, size = 14){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 3 14.8 9 21.3 9.6 16.4 13.9 17.9 20.3 12 16.9 6.1 20.3 7.6 13.9 2.7 9.6 9.2 9 12 3"/></svg>`;
+}
+function starsRow(rating, size = 14){
+  let out = '';
+  for (let i = 1; i <= 5; i++) out += starIcon(i <= Math.round(rating), size);
+  return out;
+}
+
+async function openProductModal(id){
+  const product = await Api.getProduct(id);
+  const reviews = await Api.getReviews(id);
+  const c = PRODUCT_CATS.find(pc => pc.key === product.category);
+  const wished = State.wishlist.includes(id);
+  const myReview = State.user ? reviews.find(r => r.userId === State.user.id) : null;
+
+  const avgUserRating = reviews.length
+    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    : null;
+
+  openModal('lg', `
+    <div class="product-detail">
+      <div class="product-detail__media">${Icons.svg(c.icon, 90)}</div>
+      <div>
+        <span class="product-detail__cat">${c.label}</span>
+        <h2>${Utils.escapeHtml(product.name)}</h2>
+        <div class="product-detail__rating">${starsRow(product.rating, 15)} <span class="mono">${product.rating} · ${product.reviews} avaliações do catálogo</span></div>
+        <p style="margin-bottom:16px;">${Utils.escapeHtml(product.desc)}</p>
+        <div class="product-detail__price-row">
+          <span class="price">${Utils.brl(product.price)}</span>
+          ${product.oldPrice ? `<span class="price-old">${Utils.brl(product.oldPrice)}</span>` : ''}
+        </div>
+        <div class="product-detail__actions">
+          <div class="qty-stepper">
+            <button type="button" id="pdQtyMinus" aria-label="Diminuir quantidade">${Icons.svg('minus', 13)}</button>
+            <span id="pdQty">1</span>
+            <button type="button" id="pdQtyPlus" aria-label="Aumentar quantidade">${Icons.svg('plus', 13)}</button>
+          </div>
+          <button class="btn btn-primary" id="pdAddCart">${Icons.svg('cart', 15)} Adicionar ao carrinho</button>
+          <button class="reaction-btn ${wished ? 'liked' : ''}" id="pdWishlistBtn" aria-pressed="${wished}">${Icons.svg('heart', 15)} ${wished ? 'Nos favoritos' : 'Favoritar'}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="reviews-section">
+      <h3 style="font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:14px;">${Icons.svg('star', 16)}Avaliações de compradores (<span id="reviewCount">${reviews.length}</span>)</h3>
+      ${avgUserRating ? `
+        <div class="reviews-summary">
+          <span class="big-rating">${avgUserRating.toFixed(1)}</span>
+          <div>
+            <div style="color:var(--gold);">${starsRow(avgUserRating, 15)}</div>
+            <span style="font-size:12px;color:var(--text-faint);">baseado em ${reviews.length} avaliação(ões) de usuários</span>
+          </div>
+        </div>` : ''}
+
+      ${State.user ? `
+        <div class="review-form">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:8px;">${myReview ? 'Editar sua avaliação' : 'Deixe sua avaliação'}</label>
+          <div class="star-input" id="reviewStarInput" role="radiogroup" aria-label="Nota de 1 a 5 estrelas">
+            ${[1, 2, 3, 4, 5].map(n => `<button type="button" data-star="${n}" class="${(myReview?.rating || 0) >= n ? 'on' : ''}" aria-label="${n} estrela(s)">${starIcon(true, 22)}</button>`).join('')}
+          </div>
+          <textarea id="reviewText" placeholder="Conte como foi sua experiência com o produto..." maxlength="400" style="width:100%;margin-top:10px;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px;font-size:13px;min-height:60px;resize:none;">${myReview ? Utils.escapeHtml(myReview.text) : ''}</textarea>
+          <button class="btn btn-primary btn-sm" id="submitReviewBtn" style="margin-top:10px;">${myReview ? 'Atualizar avaliação' : 'Publicar avaliação'}</button>
+        </div>` : `<p style="margin-bottom:16px;">Entre na sua conta para avaliar este produto.</p>`}
+
+      <div id="reviewList"></div>
+    </div>
+  `, 'Detalhes do produto');
+
+  renderReviewList(reviews);
+
+  let qty = 1;
+  $('#pdQtyMinus').addEventListener('click', () => { qty = Math.max(1, qty - 1); $('#pdQty').textContent = qty; });
+  $('#pdQtyPlus').addEventListener('click', () => { qty = Math.min(20, qty + 1); $('#pdQty').textContent = qty; });
+  $('#pdAddCart').addEventListener('click', () => addToCart(id, qty));
+  $('#pdWishlistBtn').addEventListener('click', async () => {
+    await toggleWishlist(id);
+    const nowWished = State.wishlist.includes(id);
+    $('#pdWishlistBtn').classList.toggle('liked', nowWished);
+    $('#pdWishlistBtn').setAttribute('aria-pressed', String(nowWished));
+    $('#pdWishlistBtn').innerHTML = `${Icons.svg('heart', 15)} ${nowWished ? 'Nos favoritos' : 'Favoritar'}`;
+  });
+
+  let selectedRating = myReview?.rating || 0;
+  const starBtns = $all('#reviewStarInput [data-star]');
+  starBtns.forEach(b => b.addEventListener('click', () => {
+    selectedRating = Number(b.dataset.star);
+    starBtns.forEach(x => x.classList.toggle('on', Number(x.dataset.star) <= selectedRating));
+  }));
+
+  const submitReviewBtn = $('#submitReviewBtn');
+  if (submitReviewBtn){
+    submitReviewBtn.addEventListener('click', async () => {
+      submitReviewBtn.disabled = true;
+      try{
+        await Api.addReview(id, State.user, { rating: selectedRating, text: $('#reviewText').value });
+        const fresh = await Api.getReviews(id);
+        renderReviewList(fresh);
+        $('#reviewCount').textContent = fresh.length;
+        Toast.show('Avaliação publicada. Obrigado pelo feedback!', 'success');
+      }catch(err){
+        Toast.show(err.message || 'Não foi possível publicar a avaliação.', 'error');
+      }finally{
+        submitReviewBtn.disabled = false;
+      }
+    });
+  }
+
+  function renderReviewList(list){
+    const box = $('#reviewList');
+    if (!list.length){
+      box.innerHTML = `<p style="color:var(--text-faint);">Ainda não há avaliações de usuários para este produto — seja o primeiro.</p>`;
+      return;
+    }
+    box.innerHTML = list.map(r => `
+      <div class="review-item">
+        <img class="avatar" src="${r.avatar}" width="34" height="34" alt="" loading="lazy" decoding="async">
+        <div>
+          <div class="comment__head">
+            <span class="comment__name">${Utils.escapeHtml(r.username)}</span>
+            ${r.verified ? `<span class="review-item__verified">${Icons.svg('checkCircle', 12)} Compra verificada</span>` : ''}
+            <span class="comment__time">${Utils.timeAgo(r.createdAt)}</span>
+          </div>
+          <div class="review-item__stars">${starsRow(r.rating, 13)}</div>
+          <p class="comment__text">${Utils.escapeHtml(r.text)}</p>
+          ${State.user && r.userId === State.user.id ? `<div class="comment__actions"><button data-delete-review="${r.id}">${Icons.svg('trash', 13)} Remover</button></div>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    $all('[data-delete-review]').forEach(b => b.addEventListener('click', async () => {
+      await Api.deleteReview(b.dataset.deleteReview, State.user.id);
+      const fresh = await Api.getReviews(id);
+      renderReviewList(fresh);
+      $('#reviewCount').textContent = fresh.length;
+      Toast.show('Avaliação removida.', 'info', 'trash');
+    }));
+  }
 }
 
 /* ============================================================================
    CHECKOUT
    ========================================================================== */
 function renderCheckoutView(){
-  const { items, subtotal, shipping, total } = cartTotals();
+  const { items, subtotal, shipping, discount, total } = cartTotals();
   const main = $('#mainContent');
   main.innerHTML = `
     <div class="page container">
@@ -812,7 +1422,14 @@ function renderCheckoutView(){
           <h3 style="font-size:14px;margin-bottom:14px;">${Icons.svg('tag', 15)} Resumo do pedido</h3>
           ${items.map(i => `<div class="mini-item"><span>${i.qty}x ${Utils.escapeHtml(i.product.name)}</span><span class="mono">${Utils.brl(i.product.price * i.qty)}</span></div>`).join('')}
           <div class="panel-divider"></div>
+          <div class="coupon-row">
+            ${State.coupon
+              ? `<div class="coupon-applied"><span>${Icons.svg('tag', 13)} ${State.coupon.code} aplicado</span><button type="button" id="removeCouponBtnCo" aria-label="Remover cupom">${Icons.svg('close', 12)}</button></div>`
+              : `<div class="field-input" id="couponWrapCo"><input id="couponInputCo" placeholder="Cupom de desconto"><button type="button" class="btn btn-ghost btn-sm" id="applyCouponBtnCo" style="margin:4px;">Aplicar</button></div>`
+            }
+          </div>
           <div class="summary-row"><span>Subtotal</span><span class="mono">${Utils.brl(subtotal)}</span></div>
+          ${discount > 0 ? `<div class="summary-row" style="color:var(--teal);"><span>Desconto</span><span class="mono">-${Utils.brl(discount)}</span></div>` : ''}
           <div class="summary-row"><span>Frete</span><span class="mono">${shipping === 0 ? 'Grátis' : Utils.brl(shipping)}</span></div>
           <div class="summary-row total"><span>Total</span><span class="price">${Utils.brl(total)}</span></div>
         </aside>
@@ -820,6 +1437,11 @@ function renderCheckoutView(){
     </div>
   `;
   State.checkoutStep === 1 ? renderShippingStep() : renderPaymentStep();
+
+  const applyCouponBtnCo = $('#applyCouponBtnCo');
+  if (applyCouponBtnCo) applyCouponBtnCo.addEventListener('click', () => applyCouponFlow($('#couponInputCo').value, renderCheckoutView));
+  const removeCouponBtnCo = $('#removeCouponBtnCo');
+  if (removeCouponBtnCo) removeCouponBtnCo.addEventListener('click', () => { State.coupon = null; renderCheckoutView(); Toast.show('Cupom removido.', 'info'); });
 }
 
 function renderShippingStep(){
@@ -988,15 +1610,17 @@ async function submitOrder(){
   const btn = $('#placeOrderBtn');
   btn.disabled = true; btn.textContent = 'Processando pagamento...';
 
-  const { items, subtotal, shipping, total } = cartTotals();
+  const { items, subtotal, shipping, discount, total } = cartTotals();
   try{
     const order = await Api.placeOrder(cartOwnerKey(), {
-      items: items.map(i => ({ name: i.product.name, qty: i.qty, price: i.product.price })),
-      subtotal, shipping, total,
+      items: items.map(i => ({ productId: i.productId, name: i.product.name, qty: i.qty, price: i.product.price })),
+      subtotal, shipping, discount, total,
+      coupon: State.coupon ? State.coupon.code : null,
       shippingData: State.shippingData,
       paymentMethod: State.paymentMethod
     });
     State.cart = [];
+    State.coupon = null;
     State.lastOrder = order;
     renderCartDrawer();
     if (State.user && !State.user.badges.includes('buyer')){
@@ -1085,7 +1709,7 @@ function renderProfileTab(tab){
       <div class="field">
         <label>Cor do banner</label>
         <div class="color-swatches" id="colorSwatches">
-          ${BANNER_COLORS.map(c => `<span class="swatch ${!u.bannerImage && u.banner === c ? 'active' : ''}" data-banner="${c}" style="background:${c};"></span>`).join('')}
+          ${BANNER_COLORS.map(c => `<button type="button" class="swatch ${!u.bannerImage && u.banner === c ? 'active' : ''}" data-banner="${c}" style="background:${c};" aria-label="Cor de banner ${c}" aria-pressed="${!u.bannerImage && u.banner === c}"></button>`).join('')}
         </div>
       </div>
       <div class="field">
@@ -1232,6 +1856,9 @@ function renderProfileTab(tab){
       await Api.logout();
       State.user = null;
       State.cart = DB.getCart('guest');
+      State.wishlist = [];
+      State.coupon = null;
+      renderWishlistBadge();
       closeModal();
       Toast.show('Sessão encerrada.', 'info', 'logout');
       showAuthScreen();
@@ -1243,22 +1870,33 @@ function renderProfileTab(tab){
    MODAL GENÉRICO
    ========================================================================== */
 function openModal(size, bodyHtml, title = ''){
+  const alreadyOpen = $('#modalRoot').classList.contains('show');
+  if (!alreadyOpen) State.lastFocused = document.activeElement;
   $('#modalRoot').innerHTML = `
-    <div class="modal modal--${size}">
+    <div class="modal modal--${size}" role="dialog" aria-modal="true" aria-labelledby="modalTitleEl">
       <div class="modal__head">
-        <h3>${Utils.escapeHtml(title)}</h3>
-        <button class="modal__close" id="genericModalClose">${Icons.svg('close', 15)}</button>
+        <h3 id="modalTitleEl">${Utils.escapeHtml(title)}</h3>
+        <button class="modal__close" id="genericModalClose" aria-label="Fechar">${Icons.svg('close', 15)}</button>
       </div>
       <div class="modal__body">${bodyHtml}</div>
     </div>`;
   $('#modalOverlay').classList.add('show');
   $('#modalRoot').classList.add('show');
   $('#genericModalClose').addEventListener('click', closeModal);
+
+  const modalEl = $('#modalRoot .modal');
+  State.activeTrap = modalEl;
+  requestAnimationFrame(() => {
+    const focusable = getFocusable(modalEl);
+    (focusable[0] || modalEl).focus();
+  });
 }
 function closeModal(){
   $('#modalOverlay').classList.remove('show');
   $('#modalRoot').classList.remove('show');
+  if (State.activeTrap === $('#modalRoot .modal')) State.activeTrap = null;
   setTimeout(() => { $('#modalRoot').innerHTML = ''; }, 200);
+  if (State.lastFocused){ State.lastFocused.focus(); State.lastFocused = null; }
 }
 
 /* ============================================================================
@@ -1272,7 +1910,7 @@ function bindGlobalDelegatedEvents(){
     const catChip = e.target.closest('#categoryChips [data-cat]');
     if (catChip){
       State.newsCategory = catChip.dataset.cat;
-      State.visibleArticles = 6;
+      State.articlePage = 1;
       renderCategoryChips();
       renderArticleGrid();
       return;
