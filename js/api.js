@@ -1,31 +1,33 @@
 /* ==========================================================================
-   api.js — Camada de "API" (simula chamadas assíncronas a um back-end)
+   api.js — Camada de "API" (agora falando de verdade com o Firebase)
    --------------------------------------------------------------------------
-   Cada método devolve uma Promise, tem uma latência artificial e pode
-   rejeitar com { field, message }, exatamente como uma API real faria.
-   Toda a UI (app.js) só conversa com este objeto — trocar isso por chamadas
-   `fetch()` reais para um servidor Node/Express (por exemplo) não exigiria
-   mudar nada fora deste arquivo.
+   Toda a UI (app.js) só conversa com este objeto — por isso a migração do
+   localStorage para o Firebase só tocou este arquivo e o db.js. Auth vira
+   Firebase Authentication; tudo o que era "tabela" no localStorage vira
+   coleção no Firestore (veja o cabeçalho de db.js).
+
+   Conteúdo de catálogo (NEWS e PRODUCTS, em data.js) continua estático —
+   só dado gerado pelo usuário (conta, comentários, avaliações, pedidos,
+   carrinho, lista de desejos, notificações) foi para o Firestore.
    ========================================================================== */
 
 const Api = {
 
-  /* -------------------- seed inicial -------------------- */
-  seedIfNeeded(){
-    if (DB.isSeeded()) return;
+  /* -------------------- seed inicial (roda 1x só, globalmente) -------------------- */
+  async seedIfNeeded(){
+    if (await DB.isSeeded()) return;
 
-    // Comentários semente em algumas notícias, de "usuários" fictícios do sistema
     const seedAuthors = [
       { name: 'RedShift', bg: '#ff3b5c' },
       { name: 'Kaelen', bg: '#2fd9c7' },
       { name: 'Vhex', bg: '#ffb93d' },
       { name: 'Nyra', bg: '#3fa9ff' }
     ];
-    const comments = [];
-    ['n1', 'n2', 'n3', 'n4'].forEach((articleId, i) => {
+    let firstComment = null;
+    for (let i = 0; i < 4; i++){
+      const articleId = ['n1', 'n2', 'n3', 'n4'][i];
       const a = seedAuthors[i % seedAuthors.length];
-      comments.push({
-        id: Utils.uid('c'),
+      const saved = await DB.addComment({
         articleId,
         parentId: null,
         userId: 'system',
@@ -37,12 +39,12 @@ const Api = {
         createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 6).toISOString(),
         likes: []
       });
-    });
-    if (comments[0]){
-      comments.push({
-        id: Utils.uid('c'),
-        articleId: comments[0].articleId,
-        parentId: comments[0].id,
+      if (i === 0) firstComment = saved;
+    }
+    if (firstComment){
+      await DB.addComment({
+        articleId: firstComment.articleId,
+        parentId: firstComment.id,
         userId: 'system',
         username: 'Nyra',
         avatar: Utils.avatarDataUri('Nyra', '#3fa9ff'),
@@ -51,8 +53,6 @@ const Api = {
         likes: []
       });
     }
-    DB.saveComments(comments);
-    DB.saveArticleLikes({});
 
     const reviews = [
       { productId: 'p1', name: 'RedShift', bg: '#ff3b5c', rating: 5, text: 'Sensor extremamente preciso, uso há 3 meses em jogos competitivos e não travou uma vez.' },
@@ -60,25 +60,26 @@ const Api = {
       { productId: 'p3', name: 'Kaelen', bg: '#2fd9c7', rating: 5, text: 'Som do switch é viciante e o hot-swap facilitou muito trocar pra um switch mais silencioso.' },
       { productId: 'p5', name: 'Nyra', bg: '#3fa9ff', rating: 4, text: 'Áudio posicional ajudou bastante a identificar passos em jogos táticos.' }
     ];
-    DB.saveReviews(reviews.map((r, i) => ({
-      id: Utils.uid('rev'),
-      productId: r.productId,
-      userId: 'system',
-      username: r.name,
-      avatar: Utils.avatarDataUri(r.name, r.bg),
-      rating: r.rating,
-      text: r.text,
-      verified: true,
-      createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 30).toISOString()
-    })));
+    for (let i = 0; i < reviews.length; i++){
+      const r = reviews[i];
+      await DB.upsertReview(null, {
+        productId: r.productId,
+        userId: 'system',
+        username: r.name,
+        avatar: Utils.avatarDataUri(r.name, r.bg),
+        rating: r.rating,
+        text: r.text,
+        verified: true,
+        createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 30).toISOString()
+      });
+    }
 
-    DB.markSeeded();
+    await DB.markSeeded();
   },
 
   /* ============================== AUTH ============================== */
 
   async register({ username, email, password }){
-    await Utils.delay();
     username = username.trim();
     email = email.trim();
 
@@ -92,19 +93,33 @@ const Api = {
     if (strength.score < 2){
       throw { field: 'password', message: 'Senha muito fraca. Combine letras maiúsculas, números e símbolos.' };
     }
-    if (DB.findUserByEmailOrUsername(email)){
-      throw { field: 'email', message: 'Já existe uma conta com este e-mail.' };
-    }
-    if (DB.findUserByEmailOrUsername(username)){
+    if (await DB.findUserByField('usernameLower', username.toLowerCase())){
       throw { field: 'username', message: 'Este nome de usuário já está em uso.' };
     }
 
+    let cred;
+    try{
+      cred = await window.fb.createUserWithEmailAndPassword(window.fb.auth, email, password);
+    }catch(err){
+      if (err.code === 'auth/email-already-in-use'){
+        throw { field: 'email', message: 'Já existe uma conta com este e-mail.' };
+      }
+      if (err.code === 'auth/invalid-email'){
+        throw { field: 'email', message: 'Informe um e-mail válido.' };
+      }
+      if (err.code === 'auth/weak-password'){
+        throw { field: 'password', message: 'O Firebase exige senha com pelo menos 6 caracteres.' };
+      }
+      throw { message: 'Não foi possível criar a conta. Tente novamente.' };
+    }
+
+    await window.fb.fbUpdateProfile(cred.user, { displayName: username });
+
     const tag = String(Math.floor(1000 + Math.random() * 9000));
     const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
-    const user = {
-      id: Utils.uid('u'),
-      username, tag, email,
-      passHash: Utils.simpleHash(password),
+    const profile = {
+      username, usernameLower: username.toLowerCase(),
+      tag, email, emailLower: email.toLowerCase(),
       avatar: Utils.avatarDataUri(username, bg),
       banner: bg,
       bannerImage: null,
@@ -112,126 +127,137 @@ const Api = {
       badges: ['founder'],
       createdAt: new Date().toISOString()
     };
-    DB.upsertUser(user);
-    DB.setSessionUserId(user.id);
-    return this._publicUser(user);
+    await DB.upsertUser(cred.user.uid, profile);
+    return this._publicUser({ id: cred.user.uid, ...profile });
   },
 
   async login({ identifier, password }){
-    await Utils.delay();
-    if (!identifier || !identifier.trim()){
+    identifier = (identifier || '').trim();
+    if (!identifier){
       throw { field: 'identifier', message: 'Informe seu e-mail ou usuário.' };
     }
-    const user = DB.findUserByEmailOrUsername(identifier);
-    if (!user){
-      throw { field: 'identifier', message: 'Não encontramos uma conta com esse e-mail ou usuário.' };
+
+    let email = identifier;
+    if (!Utils.isValidEmail(identifier)){
+      const found = await DB.findUserByField('usernameLower', identifier.toLowerCase());
+      if (!found){
+        throw { field: 'identifier', message: 'Não encontramos uma conta com esse e-mail ou usuário.' };
+      }
+      email = found.email;
     }
-    if (user.passHash !== Utils.simpleHash(password)){
-      throw { field: 'password', message: 'Senha incorreta. Tente novamente.' };
+
+    let cred;
+    try{
+      cred = await window.fb.signInWithEmailAndPassword(window.fb.auth, email, password);
+    }catch(err){
+      if (['auth/wrong-password', 'auth/invalid-credential', 'auth/user-not-found'].includes(err.code)){
+        throw { field: 'password', message: 'Senha incorreta. Tente novamente.' };
+      }
+      if (err.code === 'auth/too-many-requests'){
+        throw { message: 'Muitas tentativas seguidas. Aguarde um pouco e tente de novo.' };
+      }
+      throw { message: 'Não foi possível entrar. Tente novamente.' };
     }
-    DB.upsertUser(user);
-    DB.setSessionUserId(user.id);
-    return this._publicUser(user);
+
+    const profile = await DB.getUserById(cred.user.uid);
+    if (!profile){
+      throw { message: 'Conta autenticada, mas o perfil não foi encontrado no banco de dados.' };
+    }
+    return this._publicUser(profile);
   },
 
   async logout(){
-    await Utils.delay(150);
-    DB.clearSession();
+    await window.fb.signOut(window.fb.auth);
     return true;
   },
 
-  getCurrentUser(){
-    const id = DB.getSessionUserId();
-    if (!id) return null;
-    const user = DB.findUserById(id);
-    return user ? this._publicUser(user) : null;
+  /* Resolve o usuário da sessão atual de forma assíncrona (Firebase Auth
+     restaura a sessão via callback, não dá pra checar isso de forma
+     síncrona como era com localStorage). Use uma vez, no carregamento
+     inicial do app. */
+  onAuthReady(){
+    return new Promise((resolve) => {
+      const unsubscribe = window.fb.onAuthStateChanged(window.fb.auth, async (fbUser) => {
+        unsubscribe();
+        if (!fbUser){ resolve(null); return; }
+        const profile = await DB.getUserById(fbUser.uid);
+        resolve(profile ? this._publicUser(profile) : null);
+      });
+    });
   },
 
   async updateProfile(userId, patch){
-    await Utils.delay(300);
-    const user = DB.findUserById(userId);
-    if (!user) throw { field: null, message: 'Usuário não encontrado.' };
-    Object.assign(user, patch);
-    DB.upsertUser(user);
-    return this._publicUser(user);
+    const profile = await DB.upsertUser(userId, patch);
+    if (!profile) throw { field: null, message: 'Usuário não encontrado.' };
+    return this._publicUser(profile);
   },
 
   _publicUser(user){
-    const { passHash, ...rest } = user;
+    const { usernameLower, emailLower, ...rest } = user;
     return rest;
   },
 
   async changePassword(userId, currentPassword, newPassword){
-    await Utils.delay(320);
-    const user = DB.findUserById(userId);
-    if (!user) throw { field: null, message: 'Usuário não encontrado.' };
-    if (user.passHash !== Utils.simpleHash(currentPassword)){
-      throw { field: 'current', message: 'Senha atual incorreta.' };
-    }
     const strength = Utils.passwordStrength(newPassword);
     if (strength.score < 2){
       throw { field: 'new', message: 'A nova senha é muito fraca.' };
     }
-    user.passHash = Utils.simpleHash(newPassword);
-    DB.upsertUser(user);
+    const fbUser = window.fb.auth.currentUser;
+    if (!fbUser) throw { message: 'Sessão expirada. Entre novamente.' };
+
+    try{
+      const cred = window.fb.EmailAuthProvider.credential(fbUser.email, currentPassword);
+      await window.fb.reauthenticateWithCredential(fbUser, cred);
+    }catch(err){
+      throw { field: 'current', message: 'Senha atual incorreta.' };
+    }
+    await window.fb.updatePassword(fbUser, newPassword);
     return true;
   },
 
   /* ============================== NOTÍCIAS ============================== */
 
   async getNews(category){
-    await Utils.delay(260);
-    const likesMap = DB.getArticleLikes();
     const list = NEWS.filter(n => !category || category === 'todos' || n.category === category);
-    return list.map(n => ({ ...n, likeCount: n.likes + (likesMap[n.id]?.length || 0) }));
+    return Promise.all(list.map(async n => {
+      const likeIds = await DB.getArticleLikeIds(n.id);
+      return { ...n, likeCount: n.likes + likeIds.length };
+    }));
   },
 
   async subscribeNewsletter(email){
-    await Utils.delay(400);
     email = email.trim().toLowerCase();
     if (!Utils.isValidEmail(email)){
       throw { message: 'Informe um e-mail válido.' };
     }
-    const list = DB.getNewsletterSubs();
-    if (!list.includes(email)){
-      list.push(email);
-      DB.saveNewsletterSubs(list);
-    }
+    await DB.addNewsletterSub(email);
     return true;
   },
 
   async getArticle(id){
-    await Utils.delay(200);
     const art = NEWS.find(n => n.id === id);
     if (!art) throw { message: 'Notícia não encontrada.' };
-    const likesMap = DB.getArticleLikes();
-    return { ...art, likeCount: art.likes + (likesMap[id]?.length || 0) };
+    const likeIds = await DB.getArticleLikeIds(id);
+    return { ...art, likeCount: art.likes + likeIds.length };
   },
 
   async toggleArticleLike(articleId, userId){
-    await Utils.delay(150);
-    const map = DB.getArticleLikes();
-    const list = map[articleId] || [];
-    const has = list.includes(userId);
-    map[articleId] = has ? list.filter(u => u !== userId) : [...list, userId];
-    DB.saveArticleLikes(map);
-    return { liked: !has, count: map[articleId].length };
+    const likeIds = await DB.getArticleLikeIds(articleId);
+    const has = likeIds.includes(userId);
+    await DB.toggleArticleLike(articleId, userId, !has);
+    return { liked: !has, count: has ? likeIds.length - 1 : likeIds.length + 1 };
   },
 
   async getComments(articleId){
-    await Utils.delay(220);
-    return DB.getComments()
-      .filter(c => c.articleId === articleId)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const list = await DB.getCommentsByArticle(articleId);
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
   async addComment(articleId, user, text, parentId = null){
-    await Utils.delay(260);
     text = text.trim();
     if (!text) throw { message: 'Escreva algo antes de comentar.' };
     if (text.length > 500) throw { message: 'Comentário muito longo (máx. 500 caracteres).' };
-    const comment = {
-      id: Utils.uid('c'),
+    return DB.addComment({
       articleId,
       parentId: parentId || null,
       userId: user.id,
@@ -240,99 +266,85 @@ const Api = {
       text,
       createdAt: new Date().toISOString(),
       likes: []
-    };
-    const list = DB.getComments();
-    list.push(comment);
-    DB.saveComments(list);
-    return comment;
+    });
   },
 
   async toggleCommentLike(commentId, userId){
-    await Utils.delay(120);
-    const list = DB.getComments();
-    const c = list.find(x => x.id === commentId);
+    const c = await DB.getCommentById(commentId);
     if (!c) throw { message: 'Comentário não encontrado.' };
     const has = c.likes.includes(userId);
-    c.likes = has ? c.likes.filter(u => u !== userId) : [...c.likes, userId];
-    DB.saveComments(list);
-    return { liked: !has, count: c.likes.length };
+    await DB.toggleCommentLike(commentId, userId, !has);
+    return { liked: !has, count: has ? c.likes.length - 1 : c.likes.length + 1 };
   },
 
   async deleteComment(commentId, userId){
-    await Utils.delay(200);
-    const list = DB.getComments();
-    const c = list.find(x => x.id === commentId);
+    const c = await DB.getCommentById(commentId);
     if (!c) throw { message: 'Comentário não encontrado.' };
     if (c.userId !== userId) throw { message: 'Você só pode remover seus próprios comentários.' };
-    DB.saveComments(list.filter(x => x.id !== commentId));
+    await DB.deleteComment(commentId);
     return true;
   },
 
   /* ============================== LOJA ============================== */
 
   async getProducts(category){
-    await Utils.delay(260);
     return PRODUCTS.filter(p => !category || category === 'todos' || p.category === category);
   },
 
   async getProduct(id){
-    await Utils.delay(150);
     const p = PRODUCTS.find(x => x.id === id);
     if (!p) throw { message: 'Produto não encontrado.' };
     return p;
   },
 
+  /* ---------------- carrinho ---------------- */
+  async getCart(ownerKey){
+    return DB.getCart(ownerKey);
+  },
+
+  async saveCart(ownerKey, items){
+    return DB.saveCart(ownerKey, items);
+  },
+
   async placeOrder(ownerKey, order){
-    await Utils.delay(700);
-    const record = {
-      id: Utils.uid('order').toUpperCase(),
-      ownerKey,
-      ...order,
-      createdAt: new Date().toISOString()
-    };
-    const list = DB.getOrders();
-    list.push(record);
-    DB.saveOrders(list);
-    DB.saveCart(ownerKey, []);
-    return record;
+    const orderNumber = Utils.uid('order').toUpperCase();
+    const record = await DB.addOrder({ ownerKey, orderNumber, ...order, createdAt: new Date().toISOString() });
+    await DB.saveCart(ownerKey, []);
+    return { ...record, id: orderNumber };
   },
 
   async getOrderHistory(ownerKey){
-    await Utils.delay(250);
-    return DB.getOrders()
-      .filter(o => o.ownerKey === ownerKey)
+    const list = await DB.getOrdersByOwner(ownerKey);
+    return list
+      .map(o => ({ ...o, id: o.orderNumber || o.id }))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
-  hasPurchased(ownerKey, productId){
-    return DB.getOrders().some(o => o.ownerKey === ownerKey && (o.items || []).some(i => i.productId === productId));
+  async hasPurchased(ownerKey, productId){
+    const orders = await DB.getOrdersByOwner(ownerKey);
+    return orders.some(o => (o.items || []).some(i => i.productId === productId));
   },
 
   /* ---------------- lista de desejos ---------------- */
   async getWishlist(ownerKey){
-    await Utils.delay(150);
     return DB.getWishlist(ownerKey);
   },
 
   async toggleWishlist(ownerKey, productId){
-    await Utils.delay(150);
-    const list = DB.getWishlist(ownerKey);
+    const list = await DB.getWishlist(ownerKey);
     const has = list.includes(productId);
     const updated = has ? list.filter(id => id !== productId) : [...list, productId];
-    DB.saveWishlist(ownerKey, updated);
+    await DB.saveWishlist(ownerKey, updated);
     return { inWishlist: !has, list: updated };
   },
 
   /* ---------------- avaliações de produtos ---------------- */
   async getReviews(productId){
-    await Utils.delay(220);
-    return DB.getReviews()
-      .filter(r => r.productId === productId)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const list = await DB.getReviewsByProduct(productId);
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
   async addReview(productId, user, { rating, text }){
-    await Utils.delay(300);
     rating = Number(rating);
     text = (text || '').trim();
     if (!rating || rating < 1 || rating > 5){
@@ -344,45 +356,26 @@ const Api = {
     if (text.length > 400){
       throw { field: 'text', message: 'Comentário muito longo (máx. 400 caracteres).' };
     }
-    const list = DB.getReviews();
-    const existing = list.find(r => r.productId === productId && r.userId === user.id);
-    const verified = this.hasPurchased(user.id, productId);
 
-    if (existing){
-      existing.rating = rating;
-      existing.text = text;
-      existing.createdAt = new Date().toISOString();
-      existing.verified = verified;
-      DB.saveReviews(list);
-      return existing;
-    }
-    const review = {
-      id: Utils.uid('rev'),
-      productId,
-      userId: user.id,
-      username: user.username,
-      avatar: user.avatar,
-      rating, text, verified,
-      createdAt: new Date().toISOString()
+    const existing = await DB.findReview(productId, user.id);
+    const verified = await this.hasPurchased(user.id, productId);
+    const data = {
+      productId, userId: user.id, username: user.username, avatar: user.avatar,
+      rating, text, verified, createdAt: new Date().toISOString()
     };
-    list.push(review);
-    DB.saveReviews(list);
-    return review;
+    return DB.upsertReview(existing ? existing.id : null, data);
   },
 
   async deleteReview(reviewId, userId){
-    await Utils.delay(200);
-    const list = DB.getReviews();
-    const r = list.find(x => x.id === reviewId);
+    const r = await DB.getReviewById(reviewId);
     if (!r) throw { message: 'Avaliação não encontrada.' };
     if (r.userId !== userId) throw { message: 'Você só pode remover suas próprias avaliações.' };
-    DB.saveReviews(list.filter(x => x.id !== reviewId));
+    await DB.deleteReview(reviewId);
     return true;
   },
 
   /* ---------------- cupom de desconto ---------------- */
   async applyCoupon(code){
-    await Utils.delay(400);
     const found = COUPONS.find(c => c.code === String(code).trim().toUpperCase());
     if (!found){
       throw { message: 'Cupom inválido ou expirado.' };
@@ -393,67 +386,59 @@ const Api = {
   /* ============================== NOTIFICAÇÕES ============================== */
 
   async getNotifications(ownerKey){
-    await Utils.delay(180);
-    return DB.getNotifications(ownerKey).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const list = await DB.getNotifications(ownerKey);
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
   async addNotification(ownerKey, { type = 'info', title, message, meta = null }){
-    const list = DB.getNotifications(ownerKey);
-    list.push({
-      id: Utils.uid('notif'),
-      type, title, message, meta,
-      read: false,
-      createdAt: new Date().toISOString()
-    });
-    DB.saveNotifications(ownerKey, list);
-    return list;
+    await DB.addNotification({ ownerKey, type, title, message, meta, read: false, createdAt: new Date().toISOString() });
+    return this.getNotifications(ownerKey);
   },
 
   async markNotificationRead(ownerKey, notifId){
-    await Utils.delay(100);
-    const list = DB.getNotifications(ownerKey);
-    const n = list.find(x => x.id === notifId);
-    if (n) n.read = true;
-    DB.saveNotifications(ownerKey, list);
-    return list;
+    await DB.markNotificationRead(notifId);
+    return this.getNotifications(ownerKey);
   },
 
   async markAllNotificationsRead(ownerKey){
-    await Utils.delay(150);
-    const list = DB.getNotifications(ownerKey).map(n => ({ ...n, read: true }));
-    DB.saveNotifications(ownerKey, list);
-    return list;
+    await DB.markAllNotificationsRead(ownerKey);
+    return this.getNotifications(ownerKey);
   },
 
   /* ============================== CONTA ============================== */
 
   async exportAccountData(userId){
-    await Utils.delay(400);
-    const user = DB.findUserById(userId);
+    const user = await DB.getUserById(userId);
     if (!user) throw { message: 'Usuário não encontrado.' };
-    const { passHash, ...publicUser } = user;
+    const [orders, wishlist, cart, comments, reviews, notifications] = await Promise.all([
+      DB.getOrdersByOwner(userId),
+      DB.getWishlist(userId),
+      DB.getCart(userId),
+      DB.getCommentsByUser(userId),
+      DB.getReviewsByUser(userId),
+      DB.getNotifications(userId)
+    ]);
     return {
       exportedAt: new Date().toISOString(),
-      profile: publicUser,
-      orders: DB.getOrders().filter(o => o.ownerKey === userId),
-      wishlist: DB.getWishlist(userId),
-      cart: DB.getCart(userId),
-      comments: DB.getComments().filter(c => c.userId === userId),
-      reviews: DB.getReviews().filter(r => r.userId === userId),
-      notifications: DB.getNotifications(userId)
+      profile: this._publicUser(user),
+      orders, wishlist, cart, comments, reviews, notifications
     };
   },
 
   async deleteAccount(userId, password){
-    await Utils.delay(500);
-    const user = DB.findUserById(userId);
-    if (!user) throw { message: 'Usuário não encontrado.' };
-    if (user.passHash !== Utils.simpleHash(password)){
+    const fbUser = window.fb.auth.currentUser;
+    if (!fbUser) throw { message: 'Sessão expirada. Entre novamente.' };
+
+    try{
+      const cred = window.fb.EmailAuthProvider.credential(fbUser.email, password);
+      await window.fb.reauthenticateWithCredential(fbUser, cred);
+    }catch(err){
       throw { field: 'password', message: 'Senha incorreta.' };
     }
-    DB.deleteUser(userId);
-    DB.wipeUserData(userId);
-    DB.clearSession();
+
+    await DB.wipeUserData(userId);
+    await DB.deleteUser(userId);
+    await window.fb.fbDeleteUser(fbUser);
     return true;
   }
 };

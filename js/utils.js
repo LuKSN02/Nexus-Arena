@@ -58,9 +58,10 @@ const Utils = {
     return { score, label: labels[score], checks };
   },
 
-  /* Hash simples (NÃO criptográfico) apenas para simular armazenamento
-     de credenciais no front-end de demonstração. Em produção real, o hash
-     de senha deve ocorrer no servidor com bcrypt/argon2. */
+  /* Hash simples (NÃO criptográfico) — mantido apenas por compatibilidade
+     histórica. Não é mais usado: com o Firebase Auth conectado, a senha
+     nunca passa por aqui nem é validada no front-end; o Firebase cuida
+     disso no servidor dele. */
   simpleHash(str){
     let h = 0;
     for (let i = 0; i < str.length; i++){

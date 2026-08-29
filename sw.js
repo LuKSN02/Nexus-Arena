@@ -11,13 +11,14 @@
    disco (file://). Veja o README para como rodar um servidor local.
    ========================================================================== */
 
-const CACHE_VERSION = 'nexus-arena-v1';
+const CACHE_VERSION = 'nexus-arena-v2';
 
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './manifest.json',
+  './js/firebase-init.js',
   './js/icons.js',
   './js/utils.js',
   './js/db.js',

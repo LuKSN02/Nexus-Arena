@@ -1,8 +1,9 @@
 # Nexus Arena — Portal de E-Sports + Loja Gamer
 
-Site completo (front-end + "back-end" simulado) de notícias de e-sports com
-loja integrada de periféricos, construído em **HTML, CSS e JavaScript puro**
-— sem frameworks, sem dependências de build.
+Site de notícias de e-sports com loja integrada de periféricos, construído
+em **HTML, CSS e JavaScript puro** — sem frameworks, sem dependências de
+build — com autenticação e persistência de dados reais via **Firebase**
+(Authentication + Firestore).
 
 ## Como rodar
 
@@ -16,6 +17,8 @@ python3 -m http.server 8080
 ```
 
 Não é necessário instalar nada — não há `npm install`, não há build step.
+Mas login/cadastro só funcionam depois de configurar o Firebase — veja a
+seção **Backend real: Firebase** abaixo.
 
 ## Estrutura de arquivos
 
@@ -25,46 +28,130 @@ esports-hub/
 │                        # drawer do carrinho e modal genérico
 ├── style.css            # Todos os tokens de design (cor, tipografia, espaçamento)
 │                        # e estilos de componentes
+├── firestore.rules       # Regras de segurança do Firestore (cole no console)
 ├── js/
+│   ├── firebase-init.js  # Único arquivo que importa o SDK do Firebase; expõe
+│   │                      # tudo que o resto do app precisa em window.fb
 │   ├── icons.js          # Biblioteca própria de ícones SVG inline (substitui 100%
 │   │                      # dos emojis do site)
 │   ├── utils.js          # Formatação (moeda, datas), validação de e-mail/senha,
 │   │                      # sistema de toasts (notificações)
-│   ├── db.js              # Camada de "banco de dados" — persiste tudo em
-│   │                      # localStorage (usuários, sessão, comentários, curtidas,
-│   │                      # carrinho, pedidos)
-│   ├── data.js             # Conteúdo semente: categorias de jogos, notícias,
-│   │                      # produtos da loja, arte SVG abstrata gerada por jogo
-│   ├── api.js               # Camada de "API" — funções assíncronas com latência
-│   │                      # simulada (Promises), validações de negócio e erros
-│   │                      # no formato { field, message }, igual a uma API real
+│   ├── db.js              # Camada de "banco de dados" — fala com o Firestore
+│   │                      # (usuários, comentários, curtidas, carrinho, pedidos...)
+│   ├── data.js             # Conteúdo estático do catálogo: categorias de jogos,
+│   │                      # notícias, produtos da loja, arte SVG por jogo
+│   ├── api.js               # Camada de "API" — Firebase Auth + repassa para o
+│   │                      # db.js; erros no formato { field, message }
 │   └── app.js               # Estado da aplicação, roteamento entre views,
 │                        # renderização e todos os event handlers
 └── README.md
 ```
 
-## Por que "back-end simulado"?
+## Por que uma camada de "API" própria?
 
-Este é um artefato estático (HTML/CSS/JS puro), então não há servidor real por
-trás. Para que a experiência ainda seja **funcional de ponta a ponta**, a
-camada `api.js` foi escrita como se fosse uma API de verdade:
+`api.js` é a única camada que `app.js` (toda a UI) conhece — ela nunca fala
+com o Firebase diretamente. Isso existe para que a UI não precise saber de
+onde os dados vêm:
 
 - Todos os métodos são `async` e retornam `Promise`.
-- Há uma latência artificial (`Utils.delay`) simulando round-trip de rede.
-- Erros de validação são lançados no formato `{ field, message }`, do jeito
-  que uma API real devolveria erros de campo específico.
-- A "persistência" (`db.js`) usa `localStorage` no lugar de um banco de dados.
+- Erros são lançados no formato `{ field, message }`, do jeito que uma API
+  real devolveria erros de campo específico.
+- A "persistência" (`db.js`) fala com o Firestore através da ponte em
+  `window.fb` (definida em `js/firebase-init.js`).
 
-**Para migrar para um back-end real** (ex.: Node.js/Express + PostgreSQL,
-ou Firebase/Supabase), a única coisa que precisa mudar é a implementação
-interna de cada método em `api.js` (trocar leitura/escrita no `DB` por
-`fetch()` para endpoints reais). Nada em `app.js` precisaria mudar, pois a UI
-só conhece o contrato de `Api.*`.
+Se um dia quiser trocar o Firebase por outro backend (Node/Express, Supabase
+etc.), só a implementação interna de `api.js`/`db.js` precisa mudar — nada
+em `app.js` seria afetado, porque a UI só conhece o contrato de `Api.*`.
 
-> Nota de segurança: o "hash" de senha em `utils.js` (`simpleHash`) é apenas
-> uma simulação para fins de demonstração — **não é criptográfico**. Em um
-> back-end real, o hash de senha deve ser feito no servidor com bcrypt/argon2
-> e a senha nunca deve trafegar ou ser validada apenas no front-end.
+## Backend real: Firebase (Auth + Firestore)
+
+O projeto já está migrado do `localStorage` para o Firebase de verdade —
+autenticação, carrinho, lista de desejos, comentários, avaliações, pedidos,
+notificações e newsletter são todos lidos/escritos no Firestore. O único
+conteúdo que continua estático em `js/data.js` é o catálogo (as notícias e
+os produtos em si) — só dado gerado pelo usuário foi para o banco.
+
+### Configurar seu projeto
+
+1. Crie um projeto em [console.firebase.google.com](https://console.firebase.google.com).
+2. Em **Build → Authentication**, ative o provedor **E-mail/senha**.
+3. Em **Build → Firestore Database**, crie o banco (modo produção).
+4. Em **Configurações do projeto → Seus apps**, registre um app Web e copie
+   o `firebaseConfig`.
+5. Cole esse `firebaseConfig` em `js/firebase-init.js` (tem um `TODO`
+   marcando onde). Sem isso preenchido, o site carrega normalmente mas
+   login/cadastro vão falhar.
+6. Copie o conteúdo de `firestore.rules` (na raiz do projeto) para
+   **Firestore Database → Regras** no console e publique. Sem isso, o
+   Firestore em modo produção nega todas as leituras/escritas por padrão —
+   o app carrega, mas nada funciona.
+
+### Arquitetura da migração
+
+- `js/firebase-init.js` — único arquivo que importa o SDK do Firebase
+  (via CDN, como módulo ES). Expõe o necessário em `window.fb` para o
+  resto do app, que continua em scripts clássicos.
+- `js/db.js` — reescrito para falar com coleções do Firestore em vez do
+  `localStorage`. Toda função virou assíncrona.
+- `js/api.js` — reescrito para usar Firebase Authentication (cadastro,
+  login, logout, troca de senha, exclusão de conta) e para repassar tudo
+  o mais para o `db.js` atualizado. `app.js` não precisou saber de nada
+  disso — só uns poucos pontos que chamavam `DB.*` direto (carrinho e
+  validação de usuário em tempo real) foram ajustados para `await`.
+
+⚠️ Scripts `type="module"` sempre rodam depois de todos os scripts
+clássicos da página, mesmo aparecendo antes no HTML. Por isso nenhuma
+função de `api.js`/`db.js` lê `window.fb` fora do corpo de uma função —
+só dentro, porque essas funções só são chamadas depois que a página
+termina de carregar (a partir de `init()`, em `app.js`).
+
+### Modelo de dados no Firestore
+
+| Coleção | Documento | O que guarda |
+|---|---|---|
+| `users` | `{uid}` | perfil (username, tag, avatar, banner, badges...) |
+| `comments` | auto ID | comentários de notícia + respostas (`parentId`) |
+| `articleLikes` | `{articleId}` | `{ userIds: [...] }` |
+| `reviews` | auto ID | avaliações de produto (uma por usuário/produto) |
+| `orders` | auto ID | pedidos, com `ownerKey` = uid do dono |
+| `carts` | `{uid}` | `{ items: [{productId, qty}] }` |
+| `wishlists` | `{uid}` | `{ productIds: [...] }` |
+| `notifications` | auto ID | com `ownerKey` = uid do dono |
+| `newsletterSubs` | `{email}` | inscrição na newsletter |
+| `meta` | `seedStatus` | trava para o conteúdo de demonstração rodar 1x só |
+
+### O que mudou de comportamento
+
+- **Login aceita "usuário" ou e-mail**, como antes — mas o Firebase Auth só
+  autentica por e-mail, então quando você digita um nome de usuário o app
+  primeiro resolve o e-mail correspondente no Firestore antes de autenticar.
+- **Sessão** não é mais checada de forma síncrona: `Api.onAuthReady()`
+  substitui o antigo `Api.getCurrentUser()` e resolve depois que o Firebase
+  confirma (ou nega) a sessão restaurada.
+- **Troca de senha e exclusão de conta** agora pedem reautenticação (o
+  Firebase exige login recente para essas duas operações) — por isso os
+  dois fluxos continuam pedindo a senha atual, só que agora ela é validada
+  pelo Firebase, não por um hash local.
+- **Comentários e avaliações agora são realmente multiusuário** — como o
+  Firestore é um banco compartilhado (não mais por navegador), qualquer
+  pessoa que acessar o site com sua própria conta vê e participa dos
+  mesmos comentários. O conteúdo de demonstração (comentários/avaliações
+  de exemplo) roda uma única vez globalmente, controlado pelo documento
+  `meta/seedStatus`, em vez de uma flag por navegador.
+- **Carrinho de convidado** (antes de logar) continua no `localStorage` —
+  o app inteiro fica atrás da tela de login mesmo assim, então esse
+  caminho praticamente não é usado na prática.
+
+### Limitações conhecidas (aceitáveis para uso pessoal/demo)
+
+- As regras do Firestore não usam Cloud Functions nem transações — o
+  "trava" do seed de conteúdo tem uma pequena janela de corrida teórica em
+  cargas simultâneas (não é um problema real no uso normal).
+- Sem paginação no `getDocs()` das listagens (comentários, avaliações,
+  pedidos, notificações) — para o volume de um projeto pessoal isso não é
+  problema, mas cresceria mal em escala de produção real.
+- `console.firebase.google.com` cobra por leitura/escrita/armazenamento
+  acima do free tier (Spark) — de olho no uso se o tráfego crescer.
 
 ## Conta — funcionalidades extras
 

@@ -1,0 +1,85 @@
+// firestore.rules
+// --------------------------------------------------------------------------
+// Cole isto no Console do Firebase em: Firestore Database → Regras.
+// São as regras mínimas para o app funcionar com o modelo de dados usado
+// em js/db.js. Ajuste antes de abrir o projeto para o público em geral —
+// isto é uma base sólida para uso pessoal/demonstração, não uma auditoria
+// de segurança completa.
+// --------------------------------------------------------------------------
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Perfis: qualquer pessoa autenticada pode ler (necessário para checar
+    // usuário/e-mail disponível e resolver login por usuário), mas só o
+    // dono pode escrever no próprio documento.
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Comentários: leitura pública, criação exige login e dono correto.
+    // Update só é permitido para curtir (campo "likes") OU pelo autor.
+    match /comments/{id} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.userId ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+      );
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Curtidas de notícia — documento por artigo, só o array de uids.
+    match /articleLikes/{articleId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Avaliações de produto: leitura pública, escrita só pelo autor.
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Pedidos: só o dono lê/cria os próprios (tem endereço, é dado sensível).
+    match /orders/{id} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.ownerKey;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerKey;
+    }
+
+    // Carrinho e lista de desejos: doc ID = uid do dono.
+    match /carts/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /wishlists/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Notificações: só o dono lê/edita as próprias.
+    match /notifications/{id} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.ownerKey;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerKey;
+      allow update: if request.auth != null && request.auth.uid == resource.data.ownerKey;
+    }
+
+    // Newsletter: só cria (nunca lê/lista pelo cliente).
+    match /newsletterSubs/{email} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if false;
+    }
+
+    // Trava do seed de conteúdo de demonstração — qualquer um lê,
+    // ninguém além do próprio app cria (roda 1x só).
+    match /meta/{docId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}

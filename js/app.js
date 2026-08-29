@@ -135,20 +135,21 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init(){
   Toast.init();
-  Api.seedIfNeeded();
   fillStaticIcons();
   bindAuthEvents();
   bindShellEvents();
   bindGlobalDelegatedEvents();
   bindAccessibilityEvents();
 
-  const current = Api.getCurrentUser();
+  await Api.seedIfNeeded();
+
+  const current = await Api.onAuthReady();
   if (current){
     State.user = current;
-    State.cart = DB.getCart(cartOwnerKey());
+    State.cart = await Api.getCart(cartOwnerKey());
     await enterApp();
   } else {
-    State.cart = DB.getCart('guest');
+    State.cart = await DB.getCart('guest');
     showAuthScreen();
   }
 }
@@ -262,7 +263,7 @@ function bindAuthEvents(){
     try{
       const user = await Api.login({ identifier, password });
       State.user = user;
-      State.cart = DB.getCart(cartOwnerKey());
+      State.cart = await Api.getCart(cartOwnerKey());
       Toast.show(`Bem-vindo de volta, ${user.username}!`, 'success', 'checkCircle');
       await enterApp();
       $('#loginForm').reset();
@@ -276,21 +277,23 @@ function bindAuthEvents(){
   });
 
   // ---- validação em tempo real: cadastro ----
-  $('#regUsername').addEventListener('input', (e) => {
+  $('#regUsername').addEventListener('input', Utils.debounce(async (e) => {
     const v = e.target.value.trim();
     if (!v) return setFieldState('regUsernameWrap', 'regUsernameHint', 'default', 'Ao menos 3 caracteres.');
     if (v.length < 3) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Muito curto.');
-    if (DB.findUserByEmailOrUsername(v)) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Este usuário já existe.');
+    const exists = await DB.findUserByField('usernameLower', v.toLowerCase());
+    if (exists) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Este usuário já existe.');
     setFieldState('regUsernameWrap', 'regUsernameHint', 'valid', 'Disponível.');
-  });
+  }, 400));
 
-  $('#regEmail').addEventListener('input', (e) => {
+  $('#regEmail').addEventListener('input', Utils.debounce(async (e) => {
     const v = e.target.value.trim();
     if (!v) return setFieldState('regEmailWrap', 'regEmailHint', 'default', '');
     if (!Utils.isValidEmail(v)) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'E-mail inválido.');
-    if (DB.findUserByEmailOrUsername(v)) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'Já existe conta com este e-mail.');
+    const exists = await DB.findUserByField('emailLower', v.toLowerCase());
+    if (exists) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'Já existe conta com este e-mail.');
     setFieldState('regEmailWrap', 'regEmailHint', 'valid', 'E-mail válido.');
-  });
+  }, 400));
 
   $('#regPassword').addEventListener('input', (e) => {
     const { score, label, checks } = Utils.passwordStrength(e.target.value);
@@ -329,7 +332,7 @@ function bindAuthEvents(){
     try{
       const user = await Api.register({ username, email, password });
       State.user = user;
-      State.cart = DB.getCart(cartOwnerKey());
+      State.cart = await Api.getCart(cartOwnerKey());
       Toast.show(`Conta criada! Bem-vindo, ${user.username}.`, 'success', 'checkCircle');
       await enterApp();
       await pushNotification('welcome', 'Bem-vindo à Nexus Arena!', `Sua conta ${user.username}#${user.tag} foi criada com sucesso. Explore as notícias e a loja.`);
@@ -714,8 +717,8 @@ function renderArticleGrid(){
 async function openArticleModal(id){
   const article = await Api.getArticle(id);
   const comments = await Api.getComments(id);
-  const likesMap = DB.getArticleLikes();
-  const liked = State.user ? (likesMap[id] || []).includes(State.user.id) : false;
+  const likeIds = await DB.getArticleLikeIds(id);
+  const liked = State.user ? likeIds.includes(State.user.id) : false;
   const related = NEWS.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
 
   openModal('lg', `
@@ -1051,7 +1054,9 @@ function renderProductGrid(){
 /* ============================================================================
    CARRINHO
    ========================================================================== */
-function persistCart(){ DB.saveCart(cartOwnerKey(), State.cart); }
+function persistCart(){
+  Api.saveCart(cartOwnerKey(), State.cart).catch(err => console.error('Falha ao salvar carrinho no Firestore', err));
+}
 
 function addToCart(productId, qty = 1){
   const existing = State.cart.find(i => i.productId === productId);
@@ -1989,7 +1994,7 @@ function renderProfileTab(tab){
     $('#logoutBtn').addEventListener('click', async () => {
       await Api.logout();
       State.user = null;
-      State.cart = DB.getCart('guest');
+      State.cart = await Api.getCart('guest');
       State.wishlist = [];
       State.coupon = null;
       renderWishlistBadge();
