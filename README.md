@@ -29,6 +29,8 @@ esports-hub/
 ├── style.css            # Todos os tokens de design (cor, tipografia, espaçamento)
 │                        # e estilos de componentes
 ├── firestore.rules       # Regras de segurança do Firestore (cole no console)
+├── firebase.json         # Configuração de deploy (Hosting + regras do Firestore)
+├── .firebaserc            # ID do seu projeto Firebase (edite antes de publicar)
 ├── js/
 │   ├── firebase-init.js  # Único arquivo que importa o SDK do Firebase; expõe
 │   │                      # tudo que o resto do app precisa em window.fb
@@ -152,6 +154,45 @@ termina de carregar (a partir de `init()`, em `app.js`).
   problema, mas cresceria mal em escala de produção real.
 - `console.firebase.google.com` cobra por leitura/escrita/armazenamento
   acima do free tier (Spark) — de olho no uso se o tráfego crescer.
+
+### Publicar no Firebase Hosting
+
+O projeto já vem com `firebase.json` e `.firebaserc` prontos — a raiz da
+pasta É o site (não há build step), então publicar é direto:
+
+1. Instale a CLI (uma vez só, globalmente):
+   ```bash
+   npm install -g firebase-tools
+   ```
+2. Faça login (abre o navegador para autenticar):
+   ```bash
+   firebase login
+   ```
+3. Edite `.firebaserc` e troque `"SEU-PROJECT-ID"` pelo ID do seu projeto
+   (o mesmo que você já usou em `firebaseConfig`, em `js/firebase-init.js`
+   — aparece em **Configurações do projeto** no console).
+4. Publique, de dentro da pasta `esports-hub/`:
+   ```bash
+   firebase deploy
+   ```
+   Isso sobe o site (Hosting) **e** as regras do Firestore (`firestore.rules`)
+   de uma vez. Se quiser publicar só um dos dois:
+   ```bash
+   firebase deploy --only hosting
+   firebase deploy --only firestore:rules
+   ```
+5. O site fica em `https://SEU-PROJECT-ID.web.app` (e também em
+   `https://SEU-PROJECT-ID.firebaseapp.com`).
+
+Rodando em `https://`, o Service Worker (`sw.js`) passa a registrar de
+verdade — diferente de abrir o `index.html` direto do disco (`file://`),
+onde ele é ignorado. É a partir do deploy que dá pra testar "Instalar app"
+e o funcionamento offline pra valer.
+
+> Cada `firebase deploy` sobrescreve a versão anterior do site — não há
+> histórico de versões automático além do que o próprio Firebase Hosting
+> mantém internamente (dá pra reverter pelo console, em **Hosting → Versões
+> anteriores**, se precisar).
 
 ## Conta — funcionalidades extras
 
