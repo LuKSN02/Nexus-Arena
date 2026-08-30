@@ -93,7 +93,14 @@ const Api = {
     if (strength.score < 2){
       throw { field: 'password', message: 'Senha muito fraca. Combine letras maiúsculas, números e símbolos.' };
     }
-    if (await DB.findUserByField('usernameLower', username.toLowerCase())){
+    let usernameTaken;
+    try{
+      usernameTaken = await DB.findUserByField('usernameLower', username.toLowerCase());
+    }catch(err){
+      console.error('Erro ao checar usuário no Firestore:', err);
+      throw { message: `Não foi possível checar o usuário no banco de dados. Código: ${err.code || err.message || 'desconhecido'}.` };
+    }
+    if (usernameTaken){
       throw { field: 'username', message: 'Este nome de usuário já está em uso.' };
     }
 
@@ -110,7 +117,17 @@ const Api = {
       if (err.code === 'auth/weak-password'){
         throw { field: 'password', message: 'O Firebase exige senha com pelo menos 6 caracteres.' };
       }
-      throw { message: 'Não foi possível criar a conta. Tente novamente.' };
+      if (err.code === 'auth/operation-not-allowed'){
+        throw { message: 'O login por e-mail/senha não está ativado nesse projeto Firebase. Ative em Authentication → Método de login.' };
+      }
+      if (err.code === 'auth/configuration-not-found'){
+        throw { message: 'A Authentication ainda não foi inicializada nesse projeto Firebase. Abra a aba Authentication no console e clique em "Vamos começar" antes de ativar o provedor.' };
+      }
+      if (err.code === 'auth/network-request-failed'){
+        throw { message: 'Falha de conexão com o Firebase. Verifique sua internet e tente novamente.' };
+      }
+      console.error('Erro no cadastro (Firebase Auth):', err);
+      throw { message: `Não foi possível criar a conta. Código do erro: ${err.code || err.message || 'desconhecido'}.` };
     }
 
     await window.fb.fbUpdateProfile(cred.user, { displayName: username });
@@ -156,7 +173,11 @@ const Api = {
       if (err.code === 'auth/too-many-requests'){
         throw { message: 'Muitas tentativas seguidas. Aguarde um pouco e tente de novo.' };
       }
-      throw { message: 'Não foi possível entrar. Tente novamente.' };
+      if (err.code === 'auth/network-request-failed'){
+        throw { message: 'Falha de conexão com o Firebase. Verifique sua internet e tente novamente.' };
+      }
+      console.error('Erro no login (Firebase Auth):', err);
+      throw { message: `Não foi possível entrar. Código do erro: ${err.code || err.message || 'desconhecido'}.` };
     }
 
     const profile = await DB.getUserById(cred.user.uid);

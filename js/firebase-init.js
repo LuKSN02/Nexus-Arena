@@ -35,14 +35,15 @@ import {
   arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
 
-// TODO: cole aqui o firebaseConfig copiado do console do Firebase
+// Configuração do projeto "Nexus Arena" no Firebase (console.firebase.google.com)
 const firebaseConfig = {
-  apiKey: 'COLE_AQUI',
-  authDomain: 'SEU-PROJETO.firebaseapp.com',
-  projectId: 'SEU-PROJETO',
-  storageBucket: 'SEU-PROJETO.appspot.com',
-  messagingSenderId: 'COLE_AQUI',
-  appId: 'COLE_AQUI'
+  apiKey: 'AIzaSyBir6Y1sHO9R48ABIbI-Cb_DlUwLKKpwpM',
+  authDomain: 'nexus-a-5dea9.firebaseapp.com',
+  projectId: 'nexus-a-5dea9',
+  storageBucket: 'nexus-a-5dea9.firebasestorage.app',
+  messagingSenderId: '145121238987',
+  appId: '1:145121238987:web:02bd56c55308f147e0e04e',
+  measurementId: 'G-QL8TKDB5C2'
 };
 
 const app = initializeApp(firebaseConfig);
