@@ -37,7 +37,7 @@ import {
 
 // Configuração do projeto "Nexus Arena" no Firebase (console.firebase.google.com)
 const firebaseConfig = {
-  apiKey: 'AIzaSyBir6Y1sHO9R48ABIbI-Cb_DlUwlKKpwpM',
+  apiKey: 'AIzaSyBir6Y1sHO9R48ABIbI-Cb_DlUwLKKpwpM',
   authDomain: 'nexus-a-5dea9.firebaseapp.com',
   projectId: 'nexus-a-5dea9',
   storageBucket: 'nexus-a-5dea9.firebasestorage.app',

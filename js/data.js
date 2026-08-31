@@ -231,57 +231,68 @@ const PRODUCTS = [
   {
     id: 'p1', name: 'Mouse Óptico Strike Pro 26K', category: 'mouse',
     price: 349.9, oldPrice: 429.9, rating: 4.7, reviews: 812, tag: 'Mais vendido',
-    desc: 'Sensor óptico de 26.000 DPI, switches óticos com 80 milhões de cliques e peso de 58g.'
+    desc: 'Sensor óptico de 26.000 DPI, switches óticos com 80 milhões de cliques e peso de 58g.',
+    image: 'assets/products/p1.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p2', name: 'Mouse Wireless Vector Air', category: 'mouse',
     price: 279.9, rating: 4.5, reviews: 340,
-    desc: 'Conexão sem fio de baixa latência, bateria de 70h e revestimento emborrachado texturizado.'
+    desc: 'Conexão sem fio de baixa latência, bateria de 70h e revestimento emborrachado texturizado.',
+    image: 'assets/products/p2.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p3', name: 'Teclado Mecânico Aegis TKL', category: 'teclado',
     price: 519.0, oldPrice: 599.0, rating: 4.8, reviews: 1204, tag: 'Escolha da equipe',
-    desc: 'Switches mecânicos hot-swap, corpo em alumínio escovado e iluminação RGB por tecla.'
+    desc: 'Switches mecânicos hot-swap, corpo em alumínio escovado e iluminação RGB por tecla.',
+    image: 'assets/products/p3.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p4', name: 'Teclado Compacto Nova 60%', category: 'teclado',
     price: 389.9, rating: 4.4, reviews: 256,
-    desc: 'Formato compacto 60% para máxima mobilidade do mouse, com keycaps PBT dupla injeção.'
+    desc: 'Formato compacto 60% para máxima mobilidade do mouse, com keycaps PBT dupla injeção.',
+    image: 'assets/products/p4.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p5', name: 'Headset Aurora 7.1 Surround', category: 'headset',
     price: 459.9, oldPrice: 549.9, rating: 4.6, reviews: 673,
-    desc: 'Áudio surround virtual 7.1, drivers de 50mm e microfone com cancelamento de ruído.'
+    desc: 'Áudio surround virtual 7.1, drivers de 50mm e microfone com cancelamento de ruído.',
+    image: 'assets/products/p5.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p6', name: 'Headset Wireless Voltage Lite', category: 'headset',
     price: 329.0, rating: 4.3, reviews: 198,
-    desc: 'Até 30h de bateria, conexão de baixa latência 2.4GHz e almofadas em espuma viscoelástica.'
+    desc: 'Até 30h de bateria, conexão de baixa latência 2.4GHz e almofadas em espuma viscoelástica.',
+    image: 'assets/products/p6.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p7', name: 'Mousepad Extended Arena XL', category: 'mouse',
     price: 99.9, rating: 4.7, reviews: 421,
-    desc: 'Base emborrachada antiderrapante, 900x400mm, costura reforçada nas bordas.'
+    desc: 'Base emborrachada antiderrapante, 900x400mm, costura reforçada nas bordas.',
+    image: 'assets/products/p7.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p8', name: 'Passe de Temporada — Ligas Nexus', category: 'virtual',
     price: 49.9, rating: 4.9, reviews: 2310, tag: 'Digital',
-    desc: 'Acesso a recompensas exclusivas, moldura de perfil animada e emblema sazonal na plataforma.'
+    desc: 'Acesso a recompensas exclusivas, moldura de perfil animada e emblema sazonal na plataforma.',
+    image: 'assets/products/p8.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p9', name: 'Pacote de Moedas Nexus — 5.000', category: 'virtual',
     price: 39.9, rating: 4.6, reviews: 987, tag: 'Digital',
-    desc: 'Moedas para uso na loja de itens cosméticos e enquetes de conteúdo da plataforma.'
+    desc: 'Moedas para uso na loja de itens cosméticos e enquetes de conteúdo da plataforma.',
+    image: 'assets/products/p9.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p10', name: 'Suporte de Headset Forge Stand', category: 'mouse',
     price: 89.9, rating: 4.5, reviews: 156,
-    desc: 'Base em aço com hub USB integrado de 2 portas e antiderrapante de silicone.'
+    desc: 'Base em aço com hub USB integrado de 2 portas e antiderrapante de silicone.',
+    image: 'assets/products/p10.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p11', name: 'Teclado 96% Meridian Pro', category: 'teclado',
     price: 649.0, rating: 4.8, reviews: 302, tag: 'Premium',
-    desc: 'Layout 96% com tela OLED de status, gabinete gasket-mount e cabo destacável trançado.'
+    desc: 'Layout 96% com tela OLED de status, gabinete gasket-mount e cabo destacável trançado.',
+    image: 'assets/products/p11.jpg' // coloque o arquivo em assets/products/ com esse nome
   },
   {
     id: 'p12', name: 'Headset Pro Comp Titan', category: 'headset',

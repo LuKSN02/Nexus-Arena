@@ -1,0 +1,27 @@
+Coloque aqui as fotos dos produtos da loja.
+
+Nome de arquivo esperado (já configurado em js/data.js):
+  p1.jpg   Mouse Óptico Strike Pro 26K
+  p2.jpg   Mouse Wireless Vector Air
+  p3.jpg   Teclado Mecânico Aegis TKL
+  p4.jpg   Teclado Compacto Nova 60%
+  p5.jpg   Headset Aurora 7.1 Surround
+  p6.jpg   Headset Wireless Voltage Lite
+  p7.jpg   Mousepad Extended Arena XL
+  p8.jpg   Passe de Temporada — Ligas Nexus
+  p9.jpg   Pacote de Moedas Nexus — 5.000
+  p10.jpg  Suporte de Headset Forge Stand
+  p11.jpg  Teclado 96% Meridian Pro
+  p12.jpg  Headset Pro Comp Titan
+
+Dicas:
+- Formato JPG ou WebP, ~800x600px (ou proporção parecida) funciona bem.
+- Se algum produto não tiver imagem aqui, o site volta a mostrar o ícone
+  de contorno da categoria automaticamente — nada quebra.
+- Quer usar outro nome de arquivo ou extensão (.png, .webp)? Só editar o
+  campo "image" do produto correspondente em js/data.js.
+- Depois de subir as fotos, se o site não atualizar de primeira no
+  navegador, force um refresh completo (Cmd+Shift+R) — o cache do
+  Service Worker já foi resetado (CACHE_VERSION v3) para essa atualização.
+
+Este arquivo pode ser apagado, ele é só uma nota.

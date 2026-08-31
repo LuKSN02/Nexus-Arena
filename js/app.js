@@ -1014,7 +1014,11 @@ function renderProductGrid(){
       ${p.tag ? `<span class="product-card__tag">${p.tag}</span>` : ''}
       <button class="wishlist-toggle ${wished ? 'active' : ''}" data-wishlist-toggle="${p.id}" aria-label="${wished ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}" aria-pressed="${wished}">${Icons.svg('heart', 15)}</button>
       <div class="product-card__clickable" data-open-product="${p.id}">
-        <div class="product-card__media" style="color:var(--teal)">${Icons.svg(c.icon, 56)}</div>
+        <div class="product-card__media" style="color:var(--teal)">${
+          p.image
+            ? `<img src="${p.image}" alt="${Utils.escapeHtml(p.name)}" loading="lazy">`
+            : Icons.svg(c.icon, 56)
+        }</div>
         <div class="product-card__body">
           <span class="product-card__cat">${c.label}</span>
           <h4>${Utils.escapeHtml(p.name)}</h4>
@@ -1374,7 +1378,11 @@ async function openProductModal(id){
 
   openModal('lg', `
     <div class="product-detail">
-      <div class="product-detail__media">${Icons.svg(c.icon, 90)}</div>
+      <div class="product-detail__media">${
+        product.image
+          ? `<img src="${product.image}" alt="${Utils.escapeHtml(product.name)}">`
+          : Icons.svg(c.icon, 90)
+      }</div>
       <div>
         <span class="product-detail__cat">${c.label}</span>
         <h2>${Utils.escapeHtml(product.name)}</h2>
