@@ -1814,7 +1814,7 @@ function openProfilePanel(initialTab = 'perfil'){
   const u = State.user;
   openModal('md', `
     <div class="profile-panel">
-      <div class="profile-panel__banner" id="panelBanner" style="${u.bannerImage ? `background-image:url('${u.bannerImage}');background-size:cover;background-position:center;` : `background:${u.banner};`}"></div>
+      <div class="profile-panel__banner ${u.activeBanner ? 'banner-' + u.activeBanner : ''}" id="panelBanner" style="${u.activeBanner ? '' : (u.bannerImage ? `background-image:url('${u.bannerImage}');background-size:cover;background-position:center;` : `background:${u.banner};`)}"></div>
       <div class="profile-panel__main">
         <div class="profile-panel__avatar ${u.activeFrame ? 'frame-' + u.activeFrame : ''}">
           <img class="avatar" src="${u.avatar}" width="84" height="84" alt="">
@@ -1823,6 +1823,7 @@ function openProfilePanel(initialTab = 'perfil'){
           <div class="name">${Utils.escapeHtml(u.username)}</div>
           <div class="tag">#${u.tag}${u.customStatus ? ' · ' + Utils.escapeHtml(u.customStatus) : ''}</div>
         </div>
+        ${u.activeTitle ? `<div class="profile-title" id="panelTitle">${Utils.escapeHtml((AVAILABLE_TITLES.find(t => t.key === u.activeTitle) || {}).label || '')}</div>` : `<div class="hidden" id="panelTitle"></div>`}
         <div class="profile-panel__coins" title="Moedas Nexus">${Icons.svg('diamond', 14)} ${(u.coins || 0).toLocaleString('pt-BR')}</div>
         <div class="badge-row" id="badgeRow"></div>
       </div>
@@ -1848,6 +1849,16 @@ function openProfilePanel(initialTab = 'perfil'){
   renderProfileTab(initialTab);
 }
 
+/* Config por tipo de item cosmético da Loja de Recompensas: onde fica a
+   lista de itens disponíveis, o campo de "desbloqueados" no usuário e o
+   campo de "ativo" (quando o item pode ser equipado/desequipado). */
+const REWARD_TYPE_CONFIG = {
+  frame:  { list: () => AVAILABLE_FRAMES,  unlockedField: 'unlockedFrames',  activeField: 'activeFrame',  label: 'Moldura' },
+  badge:  { list: () => AVAILABLE_BADGES,  unlockedField: 'badges',          activeField: null,           label: 'Emblema' },
+  banner: { list: () => AVAILABLE_BANNERS, unlockedField: 'unlockedBanners', activeField: 'activeBanner', label: 'Banner' },
+  title:  { list: () => AVAILABLE_TITLES,  unlockedField: 'unlockedTitles',  activeField: 'activeTitle',  label: 'Título' }
+};
+
 function refreshProfilePanelChrome(){
   const u = State.user;
   const coinsEl = $('.profile-panel__coins');
@@ -1861,15 +1872,41 @@ function refreshProfilePanelChrome(){
   }
   const avatarWrap = $('.profile-panel__avatar');
   if (avatarWrap) avatarWrap.className = 'profile-panel__avatar' + (u.activeFrame ? ' frame-' + u.activeFrame : '');
+
+  const bannerEl = $('#panelBanner');
+  if (bannerEl){
+    bannerEl.className = 'profile-panel__banner' + (u.activeBanner ? ' banner-' + u.activeBanner : '');
+    if (!u.activeBanner){
+      bannerEl.style.backgroundImage = u.bannerImage ? `url('${u.bannerImage}')` : 'none';
+      bannerEl.style.backgroundSize = 'cover';
+      bannerEl.style.backgroundPosition = 'center';
+      bannerEl.style.background = u.bannerImage ? '' : u.banner;
+    } else {
+      bannerEl.style.backgroundImage = '';
+      bannerEl.style.background = '';
+    }
+  }
+
+  const titleEl = $('#panelTitle');
+  if (titleEl){
+    if (u.activeTitle){
+      const t = AVAILABLE_TITLES.find(x => x.key === u.activeTitle);
+      titleEl.textContent = t ? t.label : '';
+      titleEl.className = 'profile-title';
+    } else {
+      titleEl.textContent = '';
+      titleEl.className = 'hidden';
+    }
+  }
 }
 
-/* Desbloqueia uma moldura ou emblema da Loja de Recompensas gastando moedas
-   Nexus. type: 'frame' | 'badge' */
+/* Desbloqueia um item da Loja de Recompensas gastando moedas Nexus.
+   type: 'frame' | 'badge' | 'banner' | 'title' */
 async function unlockReward(type, key){
   const u = State.user;
   if (!u) return;
-  const list = type === 'frame' ? AVAILABLE_FRAMES : AVAILABLE_BADGES;
-  const item = list.find(x => x.key === key);
+  const cfg = REWARD_TYPE_CONFIG[type];
+  const item = cfg.list().find(x => x.key === key);
   if (!item || item.cost == null) return;
 
   const coins = u.coins || 0;
@@ -1879,32 +1916,29 @@ async function unlockReward(type, key){
   }
 
   const patch = { coins: coins - item.cost };
-  if (type === 'frame'){
-    const unlocked = new Set(u.unlockedFrames || []);
-    unlocked.add(key);
-    patch.unlockedFrames = [...unlocked];
-    patch.activeFrame = key; // já equipa a moldura recém-desbloqueada
-  } else {
-    const badges = new Set(u.badges || []);
-    badges.add(key);
-    patch.badges = [...badges];
-  }
+  const unlocked = new Set(u[cfg.unlockedField] || []);
+  unlocked.add(key);
+  patch[cfg.unlockedField] = [...unlocked];
+  if (cfg.activeField) patch[cfg.activeField] = key; // já equipa o item recém-desbloqueado
 
   State.user = await Api.updateProfile(u.id, patch);
   updateCoinChip();
   refreshProfilePanelChrome();
   renderProfileTab('recompensas');
-  Toast.show(`"${item.title.replace(/ — .*/, '')}" desbloqueado!`, 'success', 'checkCircle');
+  const name = item.title || item.label;
+  Toast.show(`"${name.replace(/ — .*/, '')}" desbloqueado!`, 'success', 'checkCircle');
 }
 
-/* Equipa uma moldura já desbloqueada anteriormente */
-async function equipFrame(key){
+/* Equipa (ou remove, se key for null) um item cosmético já desbloqueado */
+async function equipReward(type, key){
   const u = State.user;
   if (!u) return;
-  State.user = await Api.updateProfile(u.id, { activeFrame: key });
+  const cfg = REWARD_TYPE_CONFIG[type];
+  if (!cfg.activeField) return;
+  State.user = await Api.updateProfile(u.id, { [cfg.activeField]: key });
   refreshProfilePanelChrome();
   renderProfileTab('recompensas');
-  Toast.show('Moldura ativada.', 'success');
+  Toast.show(key ? `${cfg.label} ativado.` : `${cfg.label} removido.`, 'success');
 }
 
 function renderProfileTab(tab){
@@ -1946,9 +1980,10 @@ function renderProfileTab(tab){
     }, 400));
 
     $all('[data-banner]').forEach(sw => sw.addEventListener('click', async () => {
-      const updated = await Api.updateProfile(u.id, { banner: sw.dataset.banner, bannerImage: null });
+      const updated = await Api.updateProfile(u.id, { banner: sw.dataset.banner, bannerImage: null, activeBanner: null });
       State.user = updated;
       $all('[data-banner]').forEach(x => x.classList.toggle('active', x === sw));
+      $('#panelBanner').className = 'profile-panel__banner';
       $('#panelBanner').style.backgroundImage = 'none';
       $('#panelBanner').style.background = sw.dataset.banner;
       renderProfileTab('perfil');
@@ -1972,8 +2007,9 @@ function renderProfileTab(tab){
           else { sh2 = img.width / targetRatio; sy = (img.height - sh2) / 2; }
           ctx.drawImage(img, sx, sy, sw2, sh2, 0, 0, 640, 160);
           const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          const updated = await Api.updateProfile(u.id, { bannerImage: dataUrl });
+          const updated = await Api.updateProfile(u.id, { bannerImage: dataUrl, activeBanner: null });
           State.user = updated;
+          $('#panelBanner').className = 'profile-panel__banner';
           $('#panelBanner').style.background = 'none';
           $('#panelBanner').style.backgroundImage = `url('${dataUrl}')`;
           $('#panelBanner').style.backgroundSize = 'cover';
@@ -2061,55 +2097,73 @@ function renderProfileTab(tab){
     });
   } else if (tab === 'recompensas'){
     const coins = u.coins || 0;
-    const unlockedFrames = new Set(u.unlockedFrames || []);
-    const badges = new Set(u.badges || []);
 
-    const frameCards = AVAILABLE_FRAMES.filter(f => f.cost != null).map(f => {
-      const owned = unlockedFrames.has(f.key);
-      const active = u.activeFrame === f.key;
-      const btn = active
-        ? `<button type="button" class="btn btn-sm btn-secondary" disabled>Em uso</button>`
-        : owned
-          ? `<button type="button" class="btn btn-sm btn-secondary" data-equip-frame="${f.key}">Usar</button>`
-          : coins >= f.cost
-            ? `<button type="button" class="btn btn-sm btn-primary" data-unlock-frame="${f.key}">Desbloquear</button>`
-            : `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
-      return `
-        <div class="reward-item ${owned ? 'owned' : ''}">
-          <div class="reward-item__preview"><div class="profile-panel__avatar ${f.cls}"><img class="avatar" src="${u.avatar}" width="84" height="84" alt=""></div></div>
-          <div class="reward-item__info">
-            <div class="reward-item__title">${Utils.escapeHtml(f.title)}</div>
-            <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${f.cost.toLocaleString('pt-BR')}</div>
-          </div>
-          ${btn}
-        </div>`;
-    }).join('');
+    /* Monta o preview visual de cada tipo de item cosmético */
+    const previewHtml = (type, item) => {
+      if (type === 'frame'){
+        return `<div class="reward-item__preview"><div class="profile-panel__avatar ${item.cls}"><img class="avatar" src="${u.avatar}" width="84" height="84" alt=""></div></div>`;
+      }
+      if (type === 'badge'){
+        return `<div class="reward-item__preview"><span class="badge ${item.cls}" style="width:44px;height:44px;">${Icons.svg(item.icon, 19)}</span></div>`;
+      }
+      if (type === 'banner'){
+        return `<div class="reward-item__preview reward-item__preview--banner"><div class="profile-panel__banner ${item.cls}"></div></div>`;
+      }
+      return `<div class="reward-item__preview reward-item__preview--title">${Utils.escapeHtml(item.label)}</div>`;
+    };
 
-    const badgeCards = AVAILABLE_BADGES.filter(b => b.cost != null).map(b => {
-      const owned = badges.has(b.key);
-      const btn = owned
-        ? `<button type="button" class="btn btn-sm btn-secondary" disabled>${Icons.svg('check', 12)} Conquistado</button>`
-        : coins >= b.cost
-          ? `<button type="button" class="btn btn-sm btn-primary" data-unlock-badge="${b.key}">Desbloquear</button>`
-          : `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
-      return `
-        <div class="reward-item ${owned ? 'owned' : ''}">
-          <div class="reward-item__preview"><span class="badge ${b.cls}" style="width:44px;height:44px;">${Icons.svg(b.icon, 19)}</span></div>
-          <div class="reward-item__info">
-            <div class="reward-item__title">${Utils.escapeHtml(b.title)}</div>
-            <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${b.cost.toLocaleString('pt-BR')}</div>
-          </div>
-          ${btn}
-        </div>`;
-    }).join('');
+    const renderGrid = (type) => {
+      const cfg = REWARD_TYPE_CONFIG[type];
+      const owned = new Set(u[cfg.unlockedField] || []);
+      const active = cfg.activeField ? u[cfg.activeField] : null;
+
+      return cfg.list().filter(item => item.cost != null).map(item => {
+        const isOwned = owned.has(item.key);
+        const isActive = cfg.activeField && active === item.key;
+        const name = item.title || item.label;
+
+        let btn;
+        if (!cfg.activeField){ // emblemas: sem equipar, só "conquistado"
+          btn = isOwned
+            ? `<button type="button" class="btn btn-sm btn-secondary" disabled>${Icons.svg('check', 12)} Conquistado</button>`
+            : coins >= item.cost
+              ? `<button type="button" class="btn btn-sm btn-primary" data-unlock="${type}:${item.key}">Desbloquear</button>`
+              : `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
+        } else if (isActive){
+          btn = `<button type="button" class="btn btn-sm btn-secondary" disabled>Em uso</button><button type="button" class="btn btn-sm btn-ghost" data-equip="${type}:__none__" style="margin-left:6px;">Remover</button>`;
+        } else if (isOwned){
+          btn = `<button type="button" class="btn btn-sm btn-secondary" data-equip="${type}:${item.key}">Usar</button>`;
+        } else if (coins >= item.cost){
+          btn = `<button type="button" class="btn btn-sm btn-primary" data-unlock="${type}:${item.key}">Desbloquear</button>`;
+        } else {
+          btn = `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
+        }
+
+        return `
+          <div class="reward-item ${isOwned ? 'owned' : ''}">
+            ${previewHtml(type, item)}
+            <div class="reward-item__info">
+              <div class="reward-item__title">${Utils.escapeHtml(name)}</div>
+              <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${item.cost.toLocaleString('pt-BR')}</div>
+            </div>
+            ${btn}
+          </div>`;
+      }).join('');
+    };
 
     box.innerHTML = `
-      <p style="font-size:12px;color:var(--text-faint);margin-bottom:2px;">Gaste suas moedas Nexus em molduras de avatar e emblemas exclusivos. Sem moedas suficientes? <a href="#" id="goShopCoins" class="link-accent">compre um pacote na loja</a>.</p>
+      <p style="font-size:12px;color:var(--text-faint);margin-bottom:2px;">Gaste suas moedas Nexus em itens cosméticos exclusivos. Sem moedas suficientes? <a href="#" id="goShopCoins" class="link-accent">compre um pacote na loja</a>.</p>
       <h4 class="reward-section-title">MOLDURAS DE AVATAR</h4>
-      <div class="reward-grid">${frameCards}</div>
+      <div class="reward-grid">${renderGrid('frame')}</div>
+      <div class="panel-divider"></div>
+      <h4 class="reward-section-title">BANNERS DE PERFIL</h4>
+      <div class="reward-grid">${renderGrid('banner')}</div>
+      <div class="panel-divider"></div>
+      <h4 class="reward-section-title">TÍTULOS DE PERFIL</h4>
+      <div class="reward-grid">${renderGrid('title')}</div>
       <div class="panel-divider"></div>
       <h4 class="reward-section-title">EMBLEMAS</h4>
-      <div class="reward-grid">${badgeCards}</div>
+      <div class="reward-grid">${renderGrid('badge')}</div>
     `;
 
     $('#goShopCoins').addEventListener('click', (e) => {
@@ -2117,9 +2171,14 @@ function renderProfileTab(tab){
       closeModal();
       navigateTo('shop');
     });
-    $all('[data-unlock-frame]').forEach(b => b.addEventListener('click', () => unlockReward('frame', b.dataset.unlockFrame)));
-    $all('[data-equip-frame]').forEach(b => b.addEventListener('click', () => equipFrame(b.dataset.equipFrame)));
-    $all('[data-unlock-badge]').forEach(b => b.addEventListener('click', () => unlockReward('badge', b.dataset.unlockBadge)));
+    $all('[data-unlock]').forEach(b => {
+      const [type, key] = b.dataset.unlock.split(':');
+      b.addEventListener('click', () => unlockReward(type, key));
+    });
+    $all('[data-equip]').forEach(b => {
+      const [type, key] = b.dataset.equip.split(':');
+      b.addEventListener('click', () => equipReward(type, key === '__none__' ? null : key));
+    });
   } else if (tab === 'config'){
     box.innerHTML = `
       <div class="field">

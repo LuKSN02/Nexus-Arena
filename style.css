@@ -707,6 +707,34 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 .profile-panel__names{ margin-top:10px; }
 .profile-panel__names .name{ font-size:19px; font-family:var(--f-display); font-weight:700; }
 .profile-panel__names .tag{ font-size:12.5px; color:var(--text-faint); font-family:var(--f-mono); }
+.profile-title{
+  display:inline-flex; align-items:center; margin-top:6px; padding:3px 10px;
+  border-radius:20px; background:var(--surface-2); border:1px solid var(--gold);
+  color:var(--gold); font-size:11px; font-weight:700; letter-spacing:.03em;
+}
+
+/* Banners de perfil desbloqueáveis na Loja de Recompensas */
+.profile-panel__banner.banner-aurora{
+  background:linear-gradient(120deg, #2fd9c7, #3fa9ff, #c34fff, #2fd9c7);
+  background-size:300% 300%; animation: banner-drift 8s ease infinite;
+}
+.profile-panel__banner.banner-plasma{
+  background:linear-gradient(120deg, var(--signal), #c34fff, var(--signal));
+  background-size:300% 300%; animation: banner-drift 5s ease infinite;
+}
+.profile-panel__banner.banner-circuito{
+  background:
+    linear-gradient(90deg, rgba(47,217,199,.22) 1px, transparent 1px) 0 0/26px 100%,
+    linear-gradient(0deg, rgba(47,217,199,.22) 1px, transparent 1px) 0 0/100% 26px,
+    linear-gradient(120deg, #0d1119, #161b28);
+  animation: banner-pan 6s linear infinite;
+}
+.profile-panel__banner.banner-eclipse{
+  background:radial-gradient(circle at 30% 50%, var(--gold) 0%, transparent 45%), linear-gradient(120deg, #12151f, #0a0d14);
+  background-size:180% 180%, 100% 100%; animation: banner-drift 7s ease infinite;
+}
+@keyframes banner-drift{ 0%,100%{ background-position:0% 50%; } 50%{ background-position:100% 50%; } }
+@keyframes banner-pan{ to{ background-position:26px 0, 0 26px, 0 0; } }
 .profile-status-input{ margin-top:12px; }
 .profile-panel__coins{ display:inline-flex; align-items:center; gap:6px; margin-top:10px; padding:4px 10px; border-radius:20px; background:var(--surface-2); border:1px solid var(--border); font-size:12.5px; font-family:var(--f-mono); color:var(--gold); width:fit-content; }
 
@@ -777,8 +805,15 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
   border-radius:var(--radius-m); padding:9px 10px;
 }
 .reward-item.owned{ border-color:var(--teal); }
-.reward-item__preview{ width:44px; height:44px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
+.reward-item__preview{ width:44px; height:44px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:6px; }
 .reward-item__preview .profile-panel__avatar{ transform:scale(.6); }
+.reward-item__preview.reward-item__preview--banner{ width:56px; height:32px; border:1px solid var(--border); }
+.reward-item__preview--banner .profile-panel__banner{ width:100%; height:100%; }
+.reward-item__preview--title{
+  width:auto; height:auto; padding:5px 10px; border-radius:20px;
+  background:var(--surface); border:1px solid var(--gold); color:var(--gold);
+  font-size:10.5px; font-weight:700; white-space:nowrap;
+}
 .reward-item__info{ flex:1; min-width:0; }
 .reward-item__title{ font-size:12px; font-weight:600; line-height:1.3; }
 .reward-item__cost{ display:flex; align-items:center; gap:4px; font-family:var(--f-mono); font-size:11px; color:var(--gold); margin-top:2px; }

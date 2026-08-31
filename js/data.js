@@ -336,6 +336,25 @@ const AVAILABLE_FRAMES = [
 
 const BANNER_COLORS = ['#ff3b5c', '#2fd9c7', '#ffb93d', '#3fa9ff', '#c34fff', '#1a1e2c'];
 
+/* Banners de perfil animados/exclusivos, desbloqueáveis na Loja de
+   Recompensas com moedas Nexus. Substituem a cor/imagem de banner comum
+   enquanto ativos (classe CSS aplicada em .profile-panel__banner). */
+const AVAILABLE_BANNERS = [
+  { key: 'aurora', cls: 'banner-aurora', title: 'Banner Aurora', cost: 5000 },
+  { key: 'plasma', cls: 'banner-plasma', title: 'Banner Plasma', cost: 7000 },
+  { key: 'circuito', cls: 'banner-circuito', title: 'Banner Circuito', cost: 9000 },
+  { key: 'eclipse', cls: 'banner-eclipse', title: 'Banner Eclipse', cost: 12000 }
+];
+
+/* Títulos de perfil — etiqueta de texto exibida ao lado do nome/tag,
+   desbloqueável na Loja de Recompensas com moedas Nexus. */
+const AVAILABLE_TITLES = [
+  { key: 'invicto', label: 'Invicto', cost: 3000 },
+  { key: 'mestre-estrategista', label: 'Mestre Estrategista', cost: 6000 },
+  { key: 'lenda-da-arena', label: 'Lenda da Arena', cost: 10000 },
+  { key: 'campeao-mundial', label: 'Campeão Mundial', cost: 16000 }
+];
+
 /* Cupons de desconto válidos na loja (demonstração) */
 const COUPONS = [
   { code: 'NEXUS10', type: 'percent', value: 10, label: '10% de desconto no pedido' },
