@@ -142,6 +142,9 @@ const Api = {
       bannerImage: null,
       customStatus: '',
       badges: ['founder'],
+      coins: 0,
+      activeFrame: null,
+      unlockedFrames: [],
       createdAt: new Date().toISOString()
     };
     await DB.upsertUser(cred.user.uid, profile);

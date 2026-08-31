@@ -1721,9 +1721,46 @@ async function submitOrder(){
     State.lastOrder = order;
     renderCartDrawer();
     await pushNotification('order', 'Pedido confirmado', `Pedido #${order.id} no valor de ${Utils.brl(order.total)} foi confirmado.`, { orderId: order.id });
-    if (State.user && !State.user.badges.includes('buyer')){
-      State.user = await Api.updateProfile(State.user.id, { badges: [...State.user.badges, 'buyer'] });
-      await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
+    if (State.user){
+      const patch = {};
+      const newBadges = new Set(State.user.badges);
+      let gainedBuyer = false, gainedPass = false, coinsGained = 0;
+
+      if (!newBadges.has('buyer')){
+        newBadges.add('buyer');
+        gainedBuyer = true;
+      }
+
+      const coinItem = items.find(i => i.productId === 'p9');
+      if (coinItem){
+        coinsGained = coinItem.qty * 5000;
+        patch.coins = (State.user.coins || 0) + coinsGained;
+      }
+
+      const passItem = items.find(i => i.productId === 'p8');
+      if (passItem && !newBadges.has('season-pass')){
+        newBadges.add('season-pass');
+        gainedPass = true;
+        const unlocked = new Set(State.user.unlockedFrames || []);
+        unlocked.add('cyber');
+        patch.unlockedFrames = [...unlocked];
+        patch.activeFrame = 'cyber';
+      }
+
+      if (gainedBuyer || gainedPass) patch.badges = [...newBadges];
+
+      if (Object.keys(patch).length){
+        State.user = await Api.updateProfile(State.user.id, patch);
+        if (gainedBuyer){
+          await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
+        }
+        if (coinsGained){
+          await pushNotification('order', 'Moedas creditadas', `${coinsGained.toLocaleString('pt-BR')} moedas Nexus foram adicionadas ao seu saldo.`);
+        }
+        if (gainedPass){
+          await pushNotification('badge', 'Passe de Temporada ativado', 'Você desbloqueou o emblema e a moldura animada do Passe de Temporada — Ligas Nexus.');
+        }
+      }
     }
     renderOrderSuccessView(order);
     Toast.show('Pedido realizado com sucesso!', 'success', 'checkCircle');
@@ -1767,13 +1804,14 @@ function openProfilePanel(){
     <div class="profile-panel">
       <div class="profile-panel__banner" id="panelBanner" style="${u.bannerImage ? `background-image:url('${u.bannerImage}');background-size:cover;background-position:center;` : `background:${u.banner};`}"></div>
       <div class="profile-panel__main">
-        <div class="profile-panel__avatar">
+        <div class="profile-panel__avatar ${u.activeFrame ? 'frame-' + u.activeFrame : ''}">
           <img class="avatar" src="${u.avatar}" width="84" height="84" alt="">
         </div>
         <div class="profile-panel__names">
           <div class="name">${Utils.escapeHtml(u.username)}</div>
           <div class="tag">#${u.tag}${u.customStatus ? ' · ' + Utils.escapeHtml(u.customStatus) : ''}</div>
         </div>
+        <div class="profile-panel__coins" title="Moedas Nexus">${Icons.svg('diamond', 14)} ${(u.coins || 0).toLocaleString('pt-BR')}</div>
         <div class="badge-row" id="badgeRow"></div>
       </div>
       <div class="profile-tabs">

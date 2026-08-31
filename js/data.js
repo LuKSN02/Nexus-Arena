@@ -311,7 +311,14 @@ const PRODUCT_CATS = [
 const AVAILABLE_BADGES = [
   { key: 'founder', icon: 'shield', cls: 'b-signal', title: 'Membro fundador' },
   { key: 'buyer', icon: 'tag', cls: 'b-gold', title: 'Comprador verificado' },
-  { key: 'analyst', icon: 'trending', cls: 'b-teal', title: 'Analista da comunidade' }
+  { key: 'analyst', icon: 'trending', cls: 'b-teal', title: 'Analista da comunidade' },
+  { key: 'season-pass', icon: 'diamond', cls: 'b-teal', title: 'Passe de Temporada — Ligas Nexus' }
+];
+
+/* Molduras de avatar desbloqueáveis. Cada uma tem uma classe CSS
+   (definida em style.css) aplicada em volta do avatar no perfil. */
+const AVAILABLE_FRAMES = [
+  { key: 'cyber', cls: 'frame-cyber', title: 'Moldura Cyber — Passe de Temporada' }
 ];
 
 const BANNER_COLORS = ['#ff3b5c', '#2fd9c7', '#ffb93d', '#3fa9ff', '#c34fff', '#1a1e2c'];
