@@ -312,13 +312,26 @@ const AVAILABLE_BADGES = [
   { key: 'founder', icon: 'shield', cls: 'b-signal', title: 'Membro fundador' },
   { key: 'buyer', icon: 'tag', cls: 'b-gold', title: 'Comprador verificado' },
   { key: 'analyst', icon: 'trending', cls: 'b-teal', title: 'Analista da comunidade' },
-  { key: 'season-pass', icon: 'diamond', cls: 'b-teal', title: 'Passe de Temporada — Ligas Nexus' }
+  { key: 'season-pass', icon: 'diamond', cls: 'b-teal', title: 'Passe de Temporada — Ligas Nexus' },
+  /* Emblemas desbloqueáveis na Loja de Recompensas com moedas Nexus (campo "cost") */
+  { key: 'legend', icon: 'flame', cls: 'b-signal', title: 'Lenda Nexus', cost: 15000 },
+  { key: 'vip', icon: 'star', cls: 'b-gold', title: 'VIP Nexus', cost: 9000 },
+  { key: 'strategist', icon: 'gamepad', cls: 'b-teal', title: 'Estrategista', cost: 6000 }
 ];
 
 /* Molduras de avatar desbloqueáveis. Cada uma tem uma classe CSS
-   (definida em style.css) aplicada em volta do avatar no perfil. */
+   (definida em style.css) aplicada em volta do avatar no perfil.
+   Molduras com "cost" ficam disponíveis na Loja de Recompensas, pagas com
+   moedas Nexus; a "cyber" continua exclusiva de quem compra o Passe de
+   Temporada (sem custo em moedas). */
 const AVAILABLE_FRAMES = [
-  { key: 'cyber', cls: 'frame-cyber', title: 'Moldura Cyber — Passe de Temporada' }
+  { key: 'cyber', cls: 'frame-cyber', title: 'Moldura Cyber — Passe de Temporada' },
+  { key: 'neon', cls: 'frame-neon', title: 'Moldura Neon', cost: 4000 },
+  { key: 'toxic', cls: 'frame-toxic', title: 'Moldura Tóxica', cost: 5000 },
+  { key: 'glacial', cls: 'frame-glacial', title: 'Moldura Glacial', cost: 6000 },
+  { key: 'inferno', cls: 'frame-inferno', title: 'Moldura Inferno', cost: 8000 },
+  { key: 'void', cls: 'frame-void', title: 'Moldura do Vazio', cost: 10000 },
+  { key: 'royal', cls: 'frame-royal', title: 'Moldura Realeza', cost: 12000 }
 ];
 
 const BANNER_COLORS = ['#ff3b5c', '#2fd9c7', '#ffb93d', '#3fa9ff', '#c34fff', '#1a1e2c'];

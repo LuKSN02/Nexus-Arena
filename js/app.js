@@ -159,6 +159,8 @@ function fillStaticIcons(){
   $('#cartIcon').innerHTML = Icons.svg('cart', 18);
   $('#wishlistIcon').innerHTML = Icons.svg('heart', 18);
   $('#notifIcon').innerHTML = Icons.svg('bell', 18);
+  $('#coinChipIcon').innerHTML = Icons.svg('diamond', 15);
+  $('#coinChipAdd').innerHTML = Icons.svg('plus', 11);
   $('#drawerCartIcon').innerHTML = Icons.svg('cart', 17);
   $('#mobileMenuBtn').innerHTML = Icons.svg('menu', 18);
   $all('.modal__close').forEach(b => b.innerHTML = Icons.svg('close', 15));
@@ -400,7 +402,8 @@ function bindShellEvents(){
   $('#closeCartBtn').addEventListener('click', closeCart);
   $('#cartOverlay').addEventListener('click', () => { closeCart(); closeModal(); });
 
-  $('#profileChip').addEventListener('click', openProfilePanel);
+  $('#profileChip').addEventListener('click', () => openProfilePanel());
+  $('#coinChipBtn').addEventListener('click', () => openProfilePanel('recompensas'));
 
   $('#footerProfileLink').addEventListener('click', (e) => { e.preventDefault(); openProfilePanel(); });
   $('#footerWishlistLink').addEventListener('click', (e) => { e.preventDefault(); openWishlistModal(); });
@@ -488,6 +491,14 @@ function updateProfileChip(){
   $('#chipAvatar').src = State.user.avatar;
   $('#chipName').textContent = State.user.username;
   $('#chipTag').textContent = '#' + State.user.tag;
+  updateCoinChip();
+}
+
+/* Saldo de moedas Nexus na navbar, no estilo do contador de V-Bucks do
+   Fortnite: ícone + valor sempre visível, com botão "+" para comprar mais. */
+function updateCoinChip(){
+  if (!State.user) return;
+  $('#coinChipAmount').textContent = (State.user.coins || 0).toLocaleString('pt-BR');
 }
 
 function buildTicker(){
@@ -1751,6 +1762,7 @@ async function submitOrder(){
 
       if (Object.keys(patch).length){
         State.user = await Api.updateProfile(State.user.id, patch);
+        updateCoinChip();
         if (gainedBuyer){
           await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
         }
@@ -1797,7 +1809,7 @@ function renderOrderSuccessView(order){
 /* ============================================================================
    PAINEL DE PERFIL (estilo Discord)
    ========================================================================== */
-function openProfilePanel(){
+function openProfilePanel(initialTab = 'perfil'){
   if (!State.user) return;
   const u = State.user;
   openModal('md', `
@@ -1815,9 +1827,10 @@ function openProfilePanel(){
         <div class="badge-row" id="badgeRow"></div>
       </div>
       <div class="profile-tabs">
-        <button class="ptab active" data-ptab="perfil">PERFIL</button>
-        <button class="ptab" data-ptab="pedidos">MEUS PEDIDOS</button>
-        <button class="ptab" data-ptab="config">CONFIGURAÇÕES DA CONTA</button>
+        <button class="ptab${initialTab === 'perfil' ? ' active' : ''}" data-ptab="perfil">PERFIL</button>
+        <button class="ptab${initialTab === 'recompensas' ? ' active' : ''}" data-ptab="recompensas">RECOMPENSAS</button>
+        <button class="ptab${initialTab === 'pedidos' ? ' active' : ''}" data-ptab="pedidos">MEUS PEDIDOS</button>
+        <button class="ptab${initialTab === 'config' ? ' active' : ''}" data-ptab="config">CONFIGURAÇÕES DA CONTA</button>
       </div>
       <div class="profile-tab-content" id="ptabContent"></div>
     </div>
@@ -1832,7 +1845,66 @@ function openProfilePanel(){
     $all('[data-ptab]').forEach(x => x.classList.toggle('active', x === t));
     renderProfileTab(t.dataset.ptab);
   }));
-  renderProfileTab('perfil');
+  renderProfileTab(initialTab);
+}
+
+function refreshProfilePanelChrome(){
+  const u = State.user;
+  const coinsEl = $('.profile-panel__coins');
+  if (coinsEl) coinsEl.innerHTML = `${Icons.svg('diamond', 14)} ${(u.coins || 0).toLocaleString('pt-BR')}`;
+  const badgeRow = $('#badgeRow');
+  if (badgeRow){
+    badgeRow.innerHTML = u.badges.map(bk => {
+      const b = AVAILABLE_BADGES.find(x => x.key === bk);
+      return b ? `<span class="badge ${b.cls}" title="${b.title}">${Icons.svg(b.icon, 15)}</span>` : '';
+    }).join('');
+  }
+  const avatarWrap = $('.profile-panel__avatar');
+  if (avatarWrap) avatarWrap.className = 'profile-panel__avatar' + (u.activeFrame ? ' frame-' + u.activeFrame : '');
+}
+
+/* Desbloqueia uma moldura ou emblema da Loja de Recompensas gastando moedas
+   Nexus. type: 'frame' | 'badge' */
+async function unlockReward(type, key){
+  const u = State.user;
+  if (!u) return;
+  const list = type === 'frame' ? AVAILABLE_FRAMES : AVAILABLE_BADGES;
+  const item = list.find(x => x.key === key);
+  if (!item || item.cost == null) return;
+
+  const coins = u.coins || 0;
+  if (coins < item.cost){
+    Toast.show('Você não tem moedas Nexus suficientes.', 'warn', 'alertCircle');
+    return;
+  }
+
+  const patch = { coins: coins - item.cost };
+  if (type === 'frame'){
+    const unlocked = new Set(u.unlockedFrames || []);
+    unlocked.add(key);
+    patch.unlockedFrames = [...unlocked];
+    patch.activeFrame = key; // já equipa a moldura recém-desbloqueada
+  } else {
+    const badges = new Set(u.badges || []);
+    badges.add(key);
+    patch.badges = [...badges];
+  }
+
+  State.user = await Api.updateProfile(u.id, patch);
+  updateCoinChip();
+  refreshProfilePanelChrome();
+  renderProfileTab('recompensas');
+  Toast.show(`"${item.title.replace(/ — .*/, '')}" desbloqueado!`, 'success', 'checkCircle');
+}
+
+/* Equipa uma moldura já desbloqueada anteriormente */
+async function equipFrame(key){
+  const u = State.user;
+  if (!u) return;
+  State.user = await Api.updateProfile(u.id, { activeFrame: key });
+  refreshProfilePanelChrome();
+  renderProfileTab('recompensas');
+  Toast.show('Moldura ativada.', 'success');
 }
 
 function renderProfileTab(tab){
@@ -1987,7 +2059,68 @@ function renderProfileTab(tab){
         b.closest('.order-card').classList.toggle('open');
       }));
     });
-  } else {
+  } else if (tab === 'recompensas'){
+    const coins = u.coins || 0;
+    const unlockedFrames = new Set(u.unlockedFrames || []);
+    const badges = new Set(u.badges || []);
+
+    const frameCards = AVAILABLE_FRAMES.filter(f => f.cost != null).map(f => {
+      const owned = unlockedFrames.has(f.key);
+      const active = u.activeFrame === f.key;
+      const btn = active
+        ? `<button type="button" class="btn btn-sm btn-secondary" disabled>Em uso</button>`
+        : owned
+          ? `<button type="button" class="btn btn-sm btn-secondary" data-equip-frame="${f.key}">Usar</button>`
+          : coins >= f.cost
+            ? `<button type="button" class="btn btn-sm btn-primary" data-unlock-frame="${f.key}">Desbloquear</button>`
+            : `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
+      return `
+        <div class="reward-item ${owned ? 'owned' : ''}">
+          <div class="reward-item__preview"><div class="profile-panel__avatar ${f.cls}"><img class="avatar" src="${u.avatar}" width="84" height="84" alt=""></div></div>
+          <div class="reward-item__info">
+            <div class="reward-item__title">${Utils.escapeHtml(f.title)}</div>
+            <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${f.cost.toLocaleString('pt-BR')}</div>
+          </div>
+          ${btn}
+        </div>`;
+    }).join('');
+
+    const badgeCards = AVAILABLE_BADGES.filter(b => b.cost != null).map(b => {
+      const owned = badges.has(b.key);
+      const btn = owned
+        ? `<button type="button" class="btn btn-sm btn-secondary" disabled>${Icons.svg('check', 12)} Conquistado</button>`
+        : coins >= b.cost
+          ? `<button type="button" class="btn btn-sm btn-primary" data-unlock-badge="${b.key}">Desbloquear</button>`
+          : `<button type="button" class="btn btn-sm btn-ghost" disabled>Faltam moedas</button>`;
+      return `
+        <div class="reward-item ${owned ? 'owned' : ''}">
+          <div class="reward-item__preview"><span class="badge ${b.cls}" style="width:44px;height:44px;">${Icons.svg(b.icon, 19)}</span></div>
+          <div class="reward-item__info">
+            <div class="reward-item__title">${Utils.escapeHtml(b.title)}</div>
+            <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${b.cost.toLocaleString('pt-BR')}</div>
+          </div>
+          ${btn}
+        </div>`;
+    }).join('');
+
+    box.innerHTML = `
+      <p style="font-size:12px;color:var(--text-faint);margin-bottom:2px;">Gaste suas moedas Nexus em molduras de avatar e emblemas exclusivos. Sem moedas suficientes? <a href="#" id="goShopCoins" class="link-accent">compre um pacote na loja</a>.</p>
+      <h4 class="reward-section-title">MOLDURAS DE AVATAR</h4>
+      <div class="reward-grid">${frameCards}</div>
+      <div class="panel-divider"></div>
+      <h4 class="reward-section-title">EMBLEMAS</h4>
+      <div class="reward-grid">${badgeCards}</div>
+    `;
+
+    $('#goShopCoins').addEventListener('click', (e) => {
+      e.preventDefault();
+      closeModal();
+      navigateTo('shop');
+    });
+    $all('[data-unlock-frame]').forEach(b => b.addEventListener('click', () => unlockReward('frame', b.dataset.unlockFrame)));
+    $all('[data-equip-frame]').forEach(b => b.addEventListener('click', () => equipFrame(b.dataset.equipFrame)));
+    $all('[data-unlock-badge]').forEach(b => b.addEventListener('click', () => unlockReward('badge', b.dataset.unlockBadge)));
+  } else if (tab === 'config'){
     box.innerHTML = `
       <div class="field">
         <label>Nome de usuário</label>
