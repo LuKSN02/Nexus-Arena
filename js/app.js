@@ -281,18 +281,30 @@ function bindAuthEvents(){
     const v = e.target.value.trim();
     if (!v) return setFieldState('regUsernameWrap', 'regUsernameHint', 'default', 'Ao menos 3 caracteres.');
     if (v.length < 3) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Muito curto.');
-    const exists = await DB.findUserByField('usernameLower', v.toLowerCase());
-    if (exists) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Este usuário já existe.');
-    setFieldState('regUsernameWrap', 'regUsernameHint', 'valid', 'Disponível.');
+    setFieldState('regUsernameWrap', 'regUsernameHint', 'default', 'Checando disponibilidade...');
+    try{
+      const exists = await DB.findUserByField('usernameLower', v.toLowerCase());
+      if (exists) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Este usuário já existe.');
+      setFieldState('regUsernameWrap', 'regUsernameHint', 'valid', 'Disponível.');
+    }catch(err){
+      console.error('Erro ao checar usuário:', err);
+      setFieldState('regUsernameWrap', 'regUsernameHint', 'default', 'Não foi possível checar agora — tudo bem, checamos de novo ao enviar.');
+    }
   }, 400));
 
   $('#regEmail').addEventListener('input', Utils.debounce(async (e) => {
     const v = e.target.value.trim();
     if (!v) return setFieldState('regEmailWrap', 'regEmailHint', 'default', '');
     if (!Utils.isValidEmail(v)) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'E-mail inválido.');
-    const exists = await DB.findUserByField('emailLower', v.toLowerCase());
-    if (exists) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'Já existe conta com este e-mail.');
-    setFieldState('regEmailWrap', 'regEmailHint', 'valid', 'E-mail válido.');
+    setFieldState('regEmailWrap', 'regEmailHint', 'default', 'Checando disponibilidade...');
+    try{
+      const exists = await DB.findUserByField('emailLower', v.toLowerCase());
+      if (exists) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'Já existe conta com este e-mail.');
+      setFieldState('regEmailWrap', 'regEmailHint', 'valid', 'E-mail válido.');
+    }catch(err){
+      console.error('Erro ao checar e-mail:', err);
+      setFieldState('regEmailWrap', 'regEmailHint', 'default', 'Não foi possível checar agora — tudo bem, checamos de novo ao enviar.');
+    }
   }, 400));
 
   $('#regPassword').addEventListener('input', (e) => {

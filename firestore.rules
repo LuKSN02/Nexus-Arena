@@ -12,11 +12,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Perfis: qualquer pessoa autenticada pode ler (necessário para checar
-    // usuário/e-mail disponível e resolver login por usuário), mas só o
-    // dono pode escrever no próprio documento.
+    // Perfis: leitura de documento único (get) exige login — usada para
+    // carregar o perfil de alguém já autenticado. Já a leitura em lista
+    // (list) precisa ficar aberta mesmo sem login, porque é o que checa
+    // se um nome de usuário/e-mail já existe DURANTE o cadastro, antes
+    // de o usuário estar autenticado. Limitamos a 1 resultado por query
+    // para não permitir listar/baixar a coleção inteira de perfis.
     match /users/{uid} {
-      allow read: if request.auth != null;
+      allow get: if request.auth != null;
+      allow list: if request.query.limit <= 1;
       allow create: if request.auth != null && request.auth.uid == uid;
       allow update: if request.auth != null && request.auth.uid == uid;
       allow delete: if request.auth != null && request.auth.uid == uid;
