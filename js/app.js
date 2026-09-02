@@ -235,6 +235,11 @@ function bindAuthEvents(){
     if (e.target && e.target.id === 'gotoLogin'){ e.preventDefault(); switchAuthTab('login'); }
   });
 
+  $('#forgotPasswordLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    openForgotPasswordModal();
+  });
+
   $all('[data-toggle-pwd]').forEach(btn => {
     btn.addEventListener('click', () => {
       const input = $('#' + btn.dataset.togglePwd);
@@ -358,6 +363,47 @@ function bindAuthEvents(){
       else showFormAlert('#authAlert', err.message || 'Não foi possível criar a conta.');
     }finally{
       btn.disabled = false; btn.textContent = 'Criar minha conta';
+    }
+  });
+}
+
+/* ============================================================================
+   ESQUECI A SENHA
+   ========================================================================== */
+function openForgotPasswordModal(){
+  openModal('sm', `
+    <p class="modal-lead">Informe o e-mail ou usuário da sua conta. Se ela existir, enviaremos um link para redefinir a senha.</p>
+    <form id="forgotPasswordForm" novalidate>
+      <div class="field">
+        <label for="forgotIdentifier">E-mail ou usuário</label>
+        <div class="field-input" id="forgotIdentifierWrap">
+          <input id="forgotIdentifier" name="identifier" type="text" autocomplete="username" placeholder="voce@email.com">
+        </div>
+        <div class="field-hint" id="forgotIdentifierHint"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="forgotPasswordSubmit">Enviar link de redefinição</button>
+    </form>
+  `, 'Recuperar senha');
+
+  $('#forgotPasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const identifier = $('#forgotIdentifier').value;
+    setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'default', '');
+
+    if (!identifier.trim()){
+      setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'error', 'Informe seu e-mail ou usuário.');
+      return;
+    }
+
+    const btn = $('#forgotPasswordSubmit');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    try{
+      await Api.forgotPassword(identifier);
+      closeModal();
+      Toast.show('Se essa conta existir, você vai receber um e-mail com o link de redefinição.', 'success', 'mail');
+    }catch(err){
+      setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'error', err.message || 'Não foi possível enviar o e-mail.');
+      btn.disabled = false; btn.textContent = 'Enviar link de redefinição';
     }
   });
 }

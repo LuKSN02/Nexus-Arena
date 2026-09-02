@@ -26,7 +26,8 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  deleteUser as fbDeleteUser
+  deleteUser as fbDeleteUser,
+  sendPasswordResetEmail
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 import {
   getFirestore,
@@ -55,7 +56,7 @@ const firestore = getFirestore(app);
 window.fb = {
   auth, firestore,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, fbUpdateProfile,
-  updatePassword, reauthenticateWithCredential, EmailAuthProvider, fbDeleteUser,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider, fbDeleteUser, sendPasswordResetEmail,
   doc, setDoc, getDoc, updateDoc, deleteDoc,
   collection, addDoc, query, where, orderBy, limit, getDocs,
   arrayUnion, arrayRemove

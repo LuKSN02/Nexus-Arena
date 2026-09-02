@@ -195,6 +195,46 @@ const Api = {
     return true;
   },
 
+  /* Envia o e-mail de redefinição de senha do Firebase Auth. Aceita e-mail
+     OU usuário (mesma resolução usada no login). Por segurança, NUNCA
+     revela se a conta existe ou não: tanto no caso de sucesso quanto no
+     caso de "não achei essa conta", a mensagem devolvida ao chamador é
+     genérica — assim ninguém consegue usar esse campo pra descobrir quais
+     e-mails/usuários estão cadastrados na base (enumeração de contas). */
+  async forgotPassword(identifier){
+    identifier = (identifier || '').trim();
+    if (!identifier){
+      throw { field: 'identifier', message: 'Informe seu e-mail ou usuário.' };
+    }
+
+    let email = identifier;
+    if (!Utils.isValidEmail(identifier)){
+      const found = await DB.findUserByField('usernameLower', identifier.toLowerCase());
+      email = found ? found.email : null;
+    }
+
+    if (email){
+      try{
+        await window.fb.sendPasswordResetEmail(window.fb.auth, email);
+      }catch(err){
+        // auth/user-not-found é esperado quando o e-mail não existe no Auth
+        // (ex.: ficou órfão no Firestore) — engolimos silenciosamente para
+        // manter a mensagem genérica. Outros erros (rede, etc.) sobem.
+        if (err.code && err.code !== 'auth/user-not-found'){
+          if (err.code === 'auth/too-many-requests'){
+            throw { message: 'Muitas tentativas seguidas. Aguarde um pouco e tente de novo.' };
+          }
+          if (err.code === 'auth/network-request-failed'){
+            throw { message: 'Falha de conexão com o Firebase. Verifique sua internet e tente novamente.' };
+          }
+          console.error('Erro ao enviar redefinição de senha:', err);
+        }
+      }
+    }
+
+    return true;
+  },
+
   /* Resolve o usuário da sessão atual de forma assíncrona (Firebase Auth
      restaura a sessão via callback, não dá pra checar isso de forma
      síncrona como era com localStorage). Use uma vez, no carregamento
