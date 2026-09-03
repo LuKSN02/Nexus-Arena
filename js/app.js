@@ -2,6 +2,10 @@
    app.js — Estado da aplicação, roteamento de views e interações
    ========================================================================== */
 
+/* Troque pelo(s) seu(s) e-mail(s) de conta na Nexus Arena — só essas contas
+   veem a aba ADMIN (disparo de newsletter) no painel de perfil. */
+const ADMIN_EMAILS = ['trajano.neves01@gmail.com'];
+
 const $ = (sel, ctx = document) => ctx.querySelector(sel);
 const $all = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
@@ -190,6 +194,28 @@ async function enterApp(){
   renderWishlistBadge();
   State.notifications = await Api.getNotifications(cartOwnerKey());
   renderNotifBadge();
+
+  await claimDailyBonusIfAvailable();
+}
+
+/* Roda uma vez por sessão iniciada (login ou F5 com sessão já ativa).
+   Silencioso quando já foi resgatado hoje — DAILY_BONUS_AMOUNT é pequeno
+   de propósito para não inflacionar a economia da Loja de Recompensas. */
+async function claimDailyBonusIfAvailable(){
+  if (!State.user) return;
+  try{
+    const result = await Api.claimDailyBonus(State.user.id);
+    if (!result.claimed) return;
+
+    State.user.coins = result.coins;
+    updateProfileChip();
+
+    const streakMsg = result.streak > 1 ? ` (sequência de ${result.streak} dias)` : '';
+    Toast.show(`+${result.amount} moedas Nexus — bônus diário${streakMsg}!`, 'success', 'diamond');
+    await pushNotification('order', 'Bônus diário resgatado', `Você recebeu ${result.amount} moedas Nexus só por logar hoje${streakMsg}.`);
+  }catch(err){
+    console.error('Erro ao resgatar bônus diário:', err);
+  }
 }
 
 function switchAuthTab(tab){
@@ -373,6 +399,7 @@ function bindAuthEvents(){
 function openForgotPasswordModal(){
   openModal('sm', `
     <p class="modal-lead">Informe o e-mail ou usuário da sua conta. Se ela existir, enviaremos um link para redefinir a senha.</p>
+    <p class="modal-lead" style="font-size:12px;color:var(--text-faint);">Não recebeu em alguns minutos? Confira a caixa de spam/lixo eletrônico — e-mails automáticos às vezes caem lá.</p>
     <form id="forgotPasswordForm" novalidate>
       <div class="field">
         <label for="forgotIdentifier">E-mail ou usuário</label>
@@ -400,7 +427,7 @@ function openForgotPasswordModal(){
     try{
       await Api.forgotPassword(identifier);
       closeModal();
-      Toast.show('Se essa conta existir, você vai receber um e-mail com o link de redefinição.', 'success', 'mail');
+      Toast.show('Se essa conta existir, você vai receber um e-mail com o link de redefinição. Não esqueça de checar o spam.', 'success', 'mail');
     }catch(err){
       setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'error', err.message || 'Não foi possível enviar o e-mail.');
       btn.disabled = false; btn.textContent = 'Enviar link de redefinição';
@@ -1878,6 +1905,7 @@ function openProfilePanel(initialTab = 'perfil'){
         <button class="ptab${initialTab === 'recompensas' ? ' active' : ''}" data-ptab="recompensas">RECOMPENSAS</button>
         <button class="ptab${initialTab === 'pedidos' ? ' active' : ''}" data-ptab="pedidos">MEUS PEDIDOS</button>
         <button class="ptab${initialTab === 'config' ? ' active' : ''}" data-ptab="config">CONFIGURAÇÕES DA CONTA</button>
+        ${ADMIN_EMAILS.includes((u.email || '').toLowerCase()) ? `<button class="ptab${initialTab === 'admin' ? ' active' : ''}" data-ptab="admin">ADMIN</button>` : ''}
       </div>
       <div class="profile-tab-content" id="ptabContent"></div>
     </div>
@@ -2348,6 +2376,40 @@ function renderProfileTab(tab){
       }catch(err){
         setFieldState('deletePwdWrap', 'deletePwdHint', 'error', err.message || 'Não foi possível excluir a conta.');
         btn.disabled = false; btn.textContent = 'Excluir permanentemente';
+      }
+    });
+  } else if (tab === 'admin'){
+    box.innerHTML = `
+      <div class="field">
+        <label>Assunto</label>
+        <div class="field-input"><input id="newsletterAdminSubject" placeholder="Novidades da semana na Nexus Arena"></div>
+      </div>
+      <div class="field">
+        <label>Corpo do e-mail (HTML simples)</label>
+        <div class="field-input" style="height:auto;"><textarea id="newsletterAdminBody" rows="8" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;resize:vertical;" placeholder="&lt;p&gt;Confira as novidades desta semana...&lt;/p&gt;"></textarea></div>
+      </div>
+      <div id="newsletterAdminProgress" class="field-hint"></div>
+      <button type="button" class="btn btn-primary" id="newsletterAdminSend">Enviar para todos os inscritos</button>
+    `;
+    $('#newsletterAdminSend').addEventListener('click', async () => {
+      const subject = $('#newsletterAdminSubject').value.trim();
+      const body = $('#newsletterAdminBody').value.trim();
+      if (!subject || !body){
+        Toast.show('Preencha assunto e corpo do e-mail.', 'warn');
+        return;
+      }
+      const btn = $('#newsletterAdminSend');
+      btn.disabled = true; btn.textContent = 'Enviando...';
+      try{
+        const result = await NewsletterAdmin.sendBlast(subject, body, (done, total) => {
+          $('#newsletterAdminProgress').textContent = `Enviando ${done}/${total}...`;
+        });
+        Toast.show(`Newsletter enviada: ${result.sent} ok, ${result.failed} falharam (de ${result.total}).`, result.failed ? 'warn' : 'success', 'mail');
+      }catch(err){
+        console.error('Erro ao enviar newsletter:', err);
+        Toast.show(err.message || 'Não foi possível enviar a newsletter.', 'error');
+      }finally{
+        btn.disabled = false; btn.textContent = 'Enviar para todos os inscritos';
       }
     });
   }

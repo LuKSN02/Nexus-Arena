@@ -72,10 +72,16 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == resource.data.ownerKey;
     }
 
-    // Newsletter: só cria (nunca lê/lista pelo cliente).
+    // Newsletter: qualquer usuário logado pode se inscrever (create). A
+    // LEITURA da lista completa de e-mails é restrita ao(s) admin(s) da
+    // Nexus Arena — troque o e-mail abaixo pelo mesmo que está em
+    // ADMIN_EMAILS no js/app.js. Sem isso, qualquer usuário logado
+    // conseguiria ler a lista de e-mails inscritos pelo console do
+    // navegador, o que seria um vazamento de dados dos seus usuários.
     match /newsletterSubs/{email} {
       allow create: if request.auth != null;
-      allow read, update, delete: if false;
+      allow read: if request.auth != null && request.auth.token.email == 'trajano.neves01@gmail.com';
+      allow update, delete: if false;
     }
 
     // Trava do seed de conteúdo de demonstração — qualquer um lê,

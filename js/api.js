@@ -239,6 +239,41 @@ const Api = {
      restaura a sessão via callback, não dá pra checar isso de forma
      síncrona como era com localStorage). Use uma vez, no carregamento
      inicial do app. */
+  /* ==========================================================================
+     BÔNUS DIÁRIO — moedas Nexus grátis
+     --------------------------------------------------------------------------
+     Regra: 1 crédito por conta a cada 24h (baseado em data de calendário,
+     não em "últimas 24h" corridas, para não dar brecha de ficar reivindicando
+     de 5 em 5 minutos perto da virada). Valor pequeno de propósito, para não
+     inflacionar a economia da Loja de Recompensas (que hoje custa moedas
+     compradas com dinheiro real via pacote p9).
+     ========================================================================== */
+  DAILY_BONUS_AMOUNT: 15,
+
+  async claimDailyBonus(userId){
+    const profile = await DB.getUserById(userId);
+    if (!profile) throw { message: 'Usuário não encontrado.' };
+
+    const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, fuso do navegador
+    if (profile.lastDailyBonus === todayKey){
+      return { claimed: false, amount: 0, coins: profile.coins || 0, nextAt: null };
+    }
+
+    // Sequência de dias consecutivos (opcional, só para exibir "streak" na UI —
+    // não altera o valor da recompensa, mantendo o economy cap intacto).
+    const yesterdayKey = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const streak = profile.lastDailyBonus === yesterdayKey ? (profile.dailyStreak || 0) + 1 : 1;
+
+    const newCoins = (profile.coins || 0) + this.DAILY_BONUS_AMOUNT;
+    await DB.upsertUser(userId, {
+      coins: newCoins,
+      lastDailyBonus: todayKey,
+      dailyStreak: streak
+    });
+
+    return { claimed: true, amount: this.DAILY_BONUS_AMOUNT, coins: newCoins, streak };
+  },
+
   onAuthReady(){
     return new Promise((resolve) => {
       const unsubscribe = window.fb.onAuthStateChanged(window.fb.auth, async (fbUser) => {

@@ -167,6 +167,12 @@ const DB = {
     }, { merge: true });
   },
 
+  /* Usado pelo painel admin (NewsletterAdmin) para disparar o blast real. */
+  async getAllNewsletterSubs(){
+    const snap = await window.fb.getDocs(window.fb.collection(window.fb.firestore, 'newsletterSubs'));
+    return snap.docs.map(d => d.data());
+  },
+
   // ---- notificações ----
   async getNotifications(ownerKey){
     const q = window.fb.query(this._col('notifications'), window.fb.where('ownerKey', '==', ownerKey));
