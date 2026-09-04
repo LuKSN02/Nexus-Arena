@@ -21,6 +21,7 @@ const State = {
   productPage: 1,
   cart: [],
   wishlist: [],
+  bookmarks: [],
   notifications: [],
   coupon: null,
   maxPrice: 700,
@@ -192,8 +193,12 @@ async function enterApp(){
   renderCartDrawer();
   State.wishlist = await Api.getWishlist(cartOwnerKey());
   renderWishlistBadge();
+  State.bookmarks = await Api.getBookmarks(cartOwnerKey());
   State.notifications = await Api.getNotifications(cartOwnerKey());
   renderNotifBadge();
+
+  const sharedArticleId = new URLSearchParams(location.search).get('article');
+  if (sharedArticleId) openArticleModal(sharedArticleId);
 
   await claimDailyBonusIfAvailable();
 }
@@ -782,11 +787,17 @@ function renderArticleGrid(){
   State.articlePage = page;
   const baseIdx = (page - 1) * PAGE_SIZE_ARTICLES;
 
-  grid.innerHTML = pageItems.map((a, i) => `
+  grid.innerHTML = pageItems.map((a, i) => {
+    const bookmarked = State.bookmarks.includes(a.id);
+    return `
     <article class="article-card" data-open-article="${a.id}">
       <div class="article-card__media">
         ${gameArt(a.category, a.id + i)}
         <span class="article-card__idx">${String(baseIdx + i + 1).padStart(2, '0')}</span>
+        <div class="article-card__quick-actions">
+          <button type="button" class="card-icon-btn" data-share-article="${a.id}" aria-label="Compartilhar notícia">${Icons.svg('share', 14)}</button>
+          <button type="button" class="card-icon-btn ${bookmarked ? 'active' : ''}" data-bookmark-toggle="${a.id}" aria-pressed="${bookmarked}" aria-label="${bookmarked ? 'Remover dos salvos' : 'Salvar notícia'}">${Icons.svg('bookmark', 14)}</button>
+        </div>
       </div>
       <div class="article-card__body">
         <span class="article-card__cat">${catInfo(a.category).label}</span>
@@ -798,7 +809,8 @@ function renderArticleGrid(){
           <span class="stat">${Icons.svg('comment', 12)} ${a.comments}</span>
         </div>
       </div>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 
   renderPager('articlePager', page, totalPages, (newPage) => {
     State.articlePage = newPage;
@@ -815,6 +827,7 @@ async function openArticleModal(id){
   const comments = await Api.getComments(id);
   const likeIds = await DB.getArticleLikeIds(id);
   const liked = State.user ? likeIds.includes(State.user.id) : false;
+  const bookmarked = State.bookmarks.includes(id);
   const related = NEWS.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
 
   openModal('lg', `
@@ -831,7 +844,7 @@ async function openArticleModal(id){
       <div class="article-actions">
         <button class="reaction-btn ${liked ? 'liked' : ''}" id="articleLikeBtn" aria-pressed="${liked}" aria-label="Curtir notícia">${Icons.svg('heart', 15)}<span id="articleLikeCount">${article.likeCount}</span></button>
         <button class="reaction-btn" id="articleShareBtn">${Icons.svg('share', 15)}Compartilhar</button>
-        <button class="reaction-btn" id="articleBookmarkBtn">${Icons.svg('bookmark', 15)}Salvar</button>
+        <button class="reaction-btn ${bookmarked ? 'liked' : ''}" id="articleBookmarkBtn" aria-pressed="${bookmarked}">${Icons.svg('bookmark', 15)}${bookmarked ? 'Salvo' : 'Salvar'}</button>
       </div>
 
       ${related.length ? `
@@ -872,32 +885,18 @@ async function openArticleModal(id){
     renderArticleGrid();
   });
 
-  $('#articleShareBtn').addEventListener('click', async () => {
-    const shareData = {
-      title: article.title,
-      text: article.excerpt,
-      url: location.href
-    };
-    if (navigator.share){
-      try{ await navigator.share(shareData); }
-      catch(err){ /* usuário cancelou o compartilhamento — não é um erro */ }
-      return;
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText){
-      try{
-        await navigator.clipboard.writeText(shareData.url);
-        Toast.show('Link copiado para a área de transferência.', 'success', 'share');
-      }catch(err){
-        Toast.show('Não foi possível copiar o link.', 'error');
-      }
-      return;
-    }
-    Toast.show('Compartilhamento não suportado neste navegador.', 'warn');
-  });
+  $('#articleShareBtn').addEventListener('click', () => openShareSheet(id));
 
-  $('#articleBookmarkBtn').addEventListener('click', (e) => {
-    e.currentTarget.classList.toggle('liked');
-    Toast.show('Notícia salva nos seus favoritos.', 'info', 'bookmark');
+  $('#articleBookmarkBtn').addEventListener('click', async () => {
+    const res = await toggleBookmark(id);
+    if (!res) return;
+    const btn = $('#articleBookmarkBtn');
+    if (btn){
+      btn.classList.toggle('liked', res.bookmarked);
+      btn.innerHTML = `${Icons.svg('bookmark', 15)}${res.bookmarked ? 'Salvo' : 'Salvar'}`;
+    }
+    Toast.show(res.bookmarked ? 'Notícia salva.' : 'Removida dos salvos.', 'info', 'bookmark');
+    renderArticleGrid();
   });
 
   const submitBtn = $('#commentSubmit');
@@ -1001,6 +1000,109 @@ async function openArticleModal(id){
       Toast.show('Comentário removido.', 'info', 'trash');
     }));
   }
+}
+
+/* ============================================================================
+   COMPARTILHAMENTO SOCIAL (bottom sheet independente do modal genérico, para
+   poder abrir tanto a partir do card do grid quanto de dentro do modal de
+   artigo já aberto, sem substituir o conteúdo de um pelo outro).
+   ========================================================================== */
+function articleShareUrl(articleId){
+  const url = new URL(location.href);
+  url.search = '';
+  url.searchParams.set('article', articleId);
+  return url.toString();
+}
+
+async function openShareSheet(articleId){
+  const article = await Api.getArticle(articleId);
+  const shareUrl = articleShareUrl(articleId);
+  const shareText = encodeURIComponent(article.title);
+  const shareUrlEnc = encodeURIComponent(shareUrl);
+
+  const nativeShareAvailable = !!navigator.share;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'share-sheet-overlay';
+  overlay.innerHTML = `
+    <div class="share-sheet" role="dialog" aria-modal="true" aria-labelledby="shareSheetTitle">
+      <div class="share-sheet__handle"></div>
+      <div class="share-sheet__article">
+        <div class="share-sheet__thumb">${gameArt(article.category, article.id)}</div>
+        <div class="share-sheet__meta">
+          <span id="shareSheetTitle">Compartilhar notícia</span>
+          <p>${Utils.escapeHtml(article.title)}</p>
+        </div>
+        <button type="button" class="modal__close" id="shareSheetClose" aria-label="Fechar">${Icons.svg('close', 15)}</button>
+      </div>
+
+      ${nativeShareAvailable ? `
+        <button type="button" class="share-sheet__native" id="shareNativeBtn">${Icons.svg('share', 16)} Compartilhar via...</button>
+      ` : ''}
+
+      <div class="share-sheet__grid">
+        <a class="share-sheet__net" href="https://api.whatsapp.com/send?text=${shareText}%20${shareUrlEnc}" target="_blank" rel="noopener">
+          <span class="share-sheet__net-ic share-sheet__net-ic--whatsapp">${Icons.svg('whatsapp', 20)}</span>
+          <span>WhatsApp</span>
+        </a>
+        <a class="share-sheet__net" href="https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrlEnc}" target="_blank" rel="noopener">
+          <span class="share-sheet__net-ic share-sheet__net-ic--x">${Icons.svg('x', 18)}</span>
+          <span>X</span>
+        </a>
+        <a class="share-sheet__net" href="https://www.facebook.com/sharer/sharer.php?u=${shareUrlEnc}" target="_blank" rel="noopener">
+          <span class="share-sheet__net-ic share-sheet__net-ic--facebook">${Icons.svg('facebook', 20)}</span>
+          <span>Facebook</span>
+        </a>
+        <button type="button" class="share-sheet__net" id="shareInstagramBtn">
+          <span class="share-sheet__net-ic share-sheet__net-ic--instagram">${Icons.svg('instagram', 20)}</span>
+          <span>Instagram</span>
+        </button>
+        <button type="button" class="share-sheet__net" id="shareCopyBtn">
+          <span class="share-sheet__net-ic">${Icons.svg('link', 18)}</span>
+          <span>Copiar link</span>
+        </button>
+      </div>
+
+      <p class="share-sheet__hint">No Instagram, o link é copiado automaticamente — cole nos Stories ou na legenda do post.</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('show'));
+
+  const closeSheet = () => {
+    overlay.classList.remove('show');
+    setTimeout(() => overlay.remove(), 200);
+    document.removeEventListener('keydown', onKeydown);
+  };
+  const onKeydown = (e) => { if (e.key === 'Escape') closeSheet(); };
+  document.addEventListener('keydown', onKeydown);
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); });
+  $('#shareSheetClose', overlay).addEventListener('click', closeSheet);
+
+  const nativeBtn = $('#shareNativeBtn', overlay);
+  if (nativeBtn){
+    nativeBtn.addEventListener('click', async () => {
+      try{ await navigator.share({ title: article.title, text: article.excerpt, url: shareUrl }); closeSheet(); }
+      catch(err){ /* usuário cancelou o compartilhamento — não é um erro */ }
+    });
+  }
+
+  const copyLink = async () => {
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      try{
+        await navigator.clipboard.writeText(shareUrl);
+        Toast.show('Link copiado para a área de transferência.', 'success', 'link');
+      }catch(err){
+        Toast.show('Não foi possível copiar o link.', 'error');
+      }
+    } else {
+      Toast.show('Copie o link manualmente: ' + shareUrl, 'warn');
+    }
+  };
+
+  $('#shareCopyBtn', overlay).addEventListener('click', async () => { await copyLink(); setTimeout(closeSheet, 900); });
+  $('#shareInstagramBtn', overlay).addEventListener('click', async () => { await copyLink(); setTimeout(closeSheet, 900); });
 }
 
 /* ============================================================================
@@ -1322,6 +1424,20 @@ async function toggleWishlist(productId){
     b.classList.toggle('active', res.inWishlist);
     b.setAttribute('aria-pressed', String(res.inWishlist));
   });
+}
+
+/* ============================================================================
+   NOTÍCIAS SALVAS (BOOKMARKS)
+   ========================================================================== */
+async function toggleBookmark(articleId){
+  if (!State.user) { Toast.show('Entre na sua conta para salvar notícias.', 'warn'); return null; }
+  const res = await Api.toggleBookmark(cartOwnerKey(), articleId);
+  State.bookmarks = res.list;
+  $all(`[data-bookmark-toggle="${articleId}"]`).forEach(b => {
+    b.classList.toggle('active', res.bookmarked);
+    b.setAttribute('aria-pressed', String(res.bookmarked));
+  });
+  return res;
 }
 
 function openWishlistModal(){
@@ -1903,6 +2019,7 @@ function openProfilePanel(initialTab = 'perfil'){
       <div class="profile-tabs">
         <button class="ptab${initialTab === 'perfil' ? ' active' : ''}" data-ptab="perfil">PERFIL</button>
         <button class="ptab${initialTab === 'recompensas' ? ' active' : ''}" data-ptab="recompensas">RECOMPENSAS</button>
+        <button class="ptab${initialTab === 'salvos' ? ' active' : ''}" data-ptab="salvos">NOTÍCIAS SALVAS</button>
         <button class="ptab${initialTab === 'pedidos' ? ' active' : ''}" data-ptab="pedidos">MEUS PEDIDOS</button>
         <button class="ptab${initialTab === 'config' ? ' active' : ''}" data-ptab="config">CONFIGURAÇÕES DA CONTA</button>
         ${ADMIN_EMAILS.includes((u.email || '').toLowerCase()) ? `<button class="ptab${initialTab === 'admin' ? ' active' : ''}" data-ptab="admin">ADMIN</button>` : ''}
@@ -2063,36 +2180,31 @@ function renderProfileTab(tab){
       renderProfileTab('perfil');
     }));
 
+    const MAX_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024;
+
     $('#bannerUpload').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      if (file.size > MAX_IMAGE_UPLOAD_BYTES){
+        Toast.show('Imagem muito grande. Escolha um arquivo de até 8MB.', 'warn');
+        e.target.value = '';
+        return;
+      }
       $('#bannerFileName').textContent = file.name;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = async () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 640; canvas.height = 160;
-          const ctx = canvas.getContext('2d');
-          const targetRatio = 640 / 160;
-          const srcRatio = img.width / img.height;
-          let sw2 = img.width, sh2 = img.height, sx = 0, sy = 0;
-          if (srcRatio > targetRatio){ sw2 = img.height * targetRatio; sx = (img.width - sw2) / 2; }
-          else { sh2 = img.width / targetRatio; sy = (img.height - sh2) / 2; }
-          ctx.drawImage(img, sx, sy, sw2, sh2, 0, 0, 640, 160);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          const updated = await Api.updateProfile(u.id, { bannerImage: dataUrl, activeBanner: null });
-          State.user = updated;
-          $('#panelBanner').className = 'profile-panel__banner';
-          $('#panelBanner').style.background = 'none';
-          $('#panelBanner').style.backgroundImage = `url('${dataUrl}')`;
-          $('#panelBanner').style.backgroundSize = 'cover';
-          $('#panelBanner').style.backgroundPosition = 'center';
-          Toast.show('Banner atualizado.', 'success');
-          renderProfileTab('perfil');
-        };
-        img.src = ev.target.result;
+        openImageCropper(ev.target.result, {
+          shape: 'rect', outW: 640, outH: 160,
+          onApply: async (dataUrl) => {
+            const updated = await Api.updateProfile(u.id, { bannerImage: dataUrl, activeBanner: null });
+            State.user = updated;
+            Toast.show('Banner atualizado.', 'success');
+            openProfilePanel('perfil');
+          },
+          onCancel: () => openProfilePanel('perfil')
+        });
       };
+      reader.onerror = () => Toast.show('Não foi possível carregar essa imagem.', 'error');
       reader.readAsDataURL(file);
     });
 
@@ -2109,27 +2221,64 @@ function renderProfileTab(tab){
     $('#avatarUpload').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      if (file.size > MAX_IMAGE_UPLOAD_BYTES){
+        Toast.show('Imagem muito grande. Escolha um arquivo de até 8MB.', 'warn');
+        e.target.value = '';
+        return;
+      }
       $('#avatarFileName').textContent = file.name;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = async () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 128; canvas.height = 128;
-          const ctx = canvas.getContext('2d');
-          const size = Math.min(img.width, img.height);
-          ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 128, 128);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          const updated = await Api.updateProfile(u.id, { avatar: dataUrl });
-          State.user = updated;
-          updateProfileChip();
-          $('.profile-panel__avatar .avatar').src = dataUrl;
-          Toast.show('Foto de perfil atualizada.', 'success');
-        };
-        img.src = ev.target.result;
+        openImageCropper(ev.target.result, {
+          shape: 'circle', outW: 128, outH: 128,
+          onApply: async (dataUrl) => {
+            const updated = await Api.updateProfile(u.id, { avatar: dataUrl });
+            State.user = updated;
+            updateProfileChip();
+            Toast.show('Foto de perfil atualizada.', 'success');
+            openProfilePanel('perfil');
+          },
+          onCancel: () => openProfilePanel('perfil')
+        });
       };
+      reader.onerror = () => Toast.show('Não foi possível carregar essa imagem.', 'error');
       reader.readAsDataURL(file);
     });
+  } else if (tab === 'salvos'){
+    const items = State.bookmarks.map(id => NEWS.find(n => n.id === id)).filter(Boolean).reverse();
+    if (!items.length){
+      box.innerHTML = `
+        <div class="empty-state">
+          ${Icons.svg('bookmark', 30)}
+          <p class="empty-state__title">Nenhuma notícia salva</p>
+          <p class="empty-state__body">Toque no marcador de qualquer notícia para guardá-la aqui.</p>
+          <button type="button" class="btn btn-secondary btn-sm" id="salvosGoHome">Ver notícias</button>
+        </div>`;
+      $('#salvosGoHome').addEventListener('click', () => { closeModal(); navigateTo('home'); });
+      return;
+    }
+    box.innerHTML = `
+      <div class="saved-list">
+        ${items.map(a => `
+          <div class="saved-item" data-saved-row="${a.id}">
+            <button type="button" class="saved-item__open" data-open-article="${a.id}">
+              <span class="saved-item__media">${gameArt(a.category, a.id)}</span>
+              <span class="saved-item__body">
+                <span class="chip saved-item__chip">${catInfo(a.category).label}</span>
+                <span class="saved-item__title">${Utils.escapeHtml(a.title)}</span>
+                <span class="saved-item__meta">${Icons.svg('clock', 11)} ${a.readTime} min de leitura</span>
+              </span>
+            </button>
+            <button type="button" class="saved-item__remove" data-saved-remove="${a.id}" aria-label="Remover ${Utils.escapeHtml(a.title)} dos salvos">${Icons.svg('trash', 15)}</button>
+          </div>`).join('')}
+      </div>`;
+    $all('[data-saved-remove]', box).forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const res = await toggleBookmark(b.dataset.savedRemove);
+      if (!res) return;
+      Toast.show('Notícia removida dos salvos.', 'info', 'trash');
+      renderProfileTab('salvos');
+    }));
   } else if (tab === 'pedidos'){
     box.innerHTML = `<p style="color:var(--text-faint);">Carregando pedidos...</p>`;
     Api.getOrderHistory(cartOwnerKey()).then(orders => {
@@ -2320,6 +2469,7 @@ function renderProfileTab(tab){
       State.user = null;
       State.cart = await Api.getCart('guest');
       State.wishlist = [];
+      State.bookmarks = [];
       State.coupon = null;
       renderWishlistBadge();
       closeModal();
@@ -2368,6 +2518,7 @@ function renderProfileTab(tab){
         State.user = null;
         State.cart = [];
         State.wishlist = [];
+        State.bookmarks = [];
         State.notifications = [];
         State.coupon = null;
         closeModal();
@@ -2449,10 +2600,155 @@ function closeModal(){
 }
 
 /* ============================================================================
+   EDITOR DE RECORTE (avatar 1:1 circular / banner na proporção do layout)
+   Sem dependências externas: usa <canvas> nativo. Zoom via slider (também
+   mapeado a pinça em touch) e arraste via Pointer Events (mouse + touch).
+   ========================================================================== */
+function openImageCropper(dataUrl, { shape = 'circle', outW, outH, onApply, onCancel }){
+  const stageW = 260;
+  const stageH = shape === 'circle' ? 260 : Math.round(stageW * (outH / outW));
+
+  openModal('sm', `
+    <div class="cropper">
+      <div class="cropper__stage" id="cropperStage" style="width:${stageW}px;height:${stageH}px;">
+        <img id="cropperImg" src="${dataUrl}" draggable="false" alt="">
+        <div class="cropper__mask cropper__mask--${shape}"></div>
+      </div>
+      <div class="cropper__zoom">
+        <span aria-hidden="true">${Icons.svg('zoomOut', 15)}</span>
+        <input type="range" id="cropperZoom" min="1" max="3" step="0.01" value="1" aria-label="Zoom da imagem">
+        <span aria-hidden="true">${Icons.svg('zoomIn', 15)}</span>
+      </div>
+      <div class="cropper__actions">
+        <button type="button" class="btn btn-ghost" id="cropperCancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="cropperApply" disabled>Aplicar</button>
+      </div>
+    </div>
+  `, shape === 'circle' ? 'Ajustar foto de perfil' : 'Ajustar banner');
+
+  const stage = $('#cropperStage');
+  const imgEl = $('#cropperImg');
+  const zoomInput = $('#cropperZoom');
+  const applyBtn = $('#cropperApply');
+  const cancelBtn = $('#cropperCancel');
+
+  let naturalW = 0, naturalH = 0;
+  let offsetX = 0, offsetY = 0;
+  let dragging = false, startX = 0, startY = 0, startOffX = 0, startOffY = 0;
+  let pinchStartDist = 0, pinchStartZoom = 1;
+
+  function coverScale(){
+    return Math.max(stageW / naturalW, stageH / naturalH);
+  }
+
+  function clampOffsets(){
+    const z = parseFloat(zoomInput.value);
+    const finalScale = coverScale() * z;
+    const dispW = naturalW * finalScale;
+    const dispH = naturalH * finalScale;
+    const maxOffX = Math.max(0, (dispW - stageW) / 2);
+    const maxOffY = Math.max(0, (dispH - stageH) / 2);
+    offsetX = Math.min(maxOffX, Math.max(-maxOffX, offsetX));
+    offsetY = Math.min(maxOffY, Math.max(-maxOffY, offsetY));
+  }
+
+  function draw(){
+    clampOffsets();
+    const z = parseFloat(zoomInput.value);
+    const finalScale = coverScale() * z;
+    imgEl.style.width = (naturalW * finalScale) + 'px';
+    imgEl.style.height = (naturalH * finalScale) + 'px';
+    imgEl.style.transform = `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`;
+  }
+
+  imgEl.onload = () => {
+    naturalW = imgEl.naturalWidth;
+    naturalH = imgEl.naturalHeight;
+    offsetX = 0; offsetY = 0;
+    draw();
+    applyBtn.disabled = false;
+  };
+  imgEl.onerror = () => {
+    Toast.show('Não foi possível carregar essa imagem.', 'error');
+    closeModal();
+  };
+  if (imgEl.complete && imgEl.naturalWidth) imgEl.onload();
+
+  zoomInput.addEventListener('input', draw);
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (!naturalW) return;
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startOffX = offsetX; startOffY = offsetY;
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    offsetX = startOffX + (e.clientX - startX);
+    offsetY = startOffY + (e.clientY - startY);
+    draw();
+  });
+  const stopDrag = () => { dragging = false; };
+  stage.addEventListener('pointerup', stopDrag);
+  stage.addEventListener('pointercancel', stopDrag);
+
+  // pinça (dois dedos) em telas touch — mapeia a distância entre os dedos
+  // para o mesmo slider de zoom usado no desktop.
+  stage.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2){
+      dragging = false;
+      const [t1, t2] = e.touches;
+      pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      pinchStartZoom = parseFloat(zoomInput.value);
+    }
+  });
+  stage.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2){
+      e.preventDefault();
+      const [t1, t2] = e.touches;
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const ratio = dist / (pinchStartDist || dist);
+      const nextZoom = Math.min(3, Math.max(1, pinchStartZoom * ratio));
+      zoomInput.value = nextZoom.toFixed(2);
+      draw();
+    }
+  }, { passive: false });
+
+  cancelBtn.addEventListener('click', () => {
+    closeModal();
+    if (onCancel) onCancel();
+  });
+
+  applyBtn.addEventListener('click', () => {
+    const z = parseFloat(zoomInput.value);
+    const finalScale = coverScale() * z;
+    const sW = stageW / finalScale;
+    const sH = stageH / finalScale;
+    const sX = (naturalW - sW) / 2 - offsetX / finalScale;
+    const sY = (naturalH - sH) / 2 - offsetY / finalScale;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = outW; canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgEl, sX, sY, sW, sH, 0, 0, outW, outH);
+    const outDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    closeModal();
+    onApply(outDataUrl);
+  });
+}
+
+/* ============================================================================
    EVENTOS DELEGADOS GLOBAIS (conteúdo re-renderizado dinamicamente)
    ========================================================================== */
 function bindGlobalDelegatedEvents(){
   document.addEventListener('click', (e) => {
+    const bmToggle = e.target.closest('[data-bookmark-toggle]');
+    if (bmToggle){ toggleBookmark(bmToggle.dataset.bookmarkToggle); return; }
+
+    const shareBtn = e.target.closest('[data-share-article]');
+    if (shareBtn){ openShareSheet(shareBtn.dataset.shareArticle); return; }
+
     const openArt = e.target.closest('[data-open-article]');
     if (openArt){ openArticleModal(openArt.dataset.openArticle); return; }
 

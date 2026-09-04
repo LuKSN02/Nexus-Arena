@@ -19,6 +19,7 @@
      orders/{id}              — pedidos (campo ownerKey = uid)
      carts/{uid}               — { items: [{productId, qty}] }
      wishlists/{uid}           — { productIds: [...] }
+     bookmarks/{uid}           — { articleIds: [...] } (notícias salvas)
      notifications/{id}        — campo ownerKey = uid
      newsletterSubs/{email}    — doc id = e-mail (URL-encoded)
      meta/seedStatus           — trava para o seed de conteúdo de demonstração rodar 1x só
@@ -123,6 +124,15 @@ const DB = {
     await window.fb.setDoc(this._doc('wishlists', ownerKey), { productIds }, { merge: true });
   },
 
+  // ---- notícias salvas (bookmarks) ----
+  async getBookmarks(ownerKey){
+    const snap = await window.fb.getDoc(this._doc('bookmarks', ownerKey));
+    return snap.exists() ? (snap.data().articleIds || []) : [];
+  },
+  async saveBookmarks(ownerKey, articleIds){
+    await window.fb.setDoc(this._doc('bookmarks', ownerKey), { articleIds }, { merge: true });
+  },
+
   // ---- avaliações de produtos ----
   async getReviewsByProduct(productId){
     const q = window.fb.query(this._col('reviews'), window.fb.where('productId', '==', productId));
@@ -206,6 +216,7 @@ const DB = {
   async wipeUserData(uid){
     await window.fb.deleteDoc(this._doc('carts', uid)).catch(() => {});
     await window.fb.deleteDoc(this._doc('wishlists', uid)).catch(() => {});
+    await window.fb.deleteDoc(this._doc('bookmarks', uid)).catch(() => {});
     const notifs = await this.getNotifications(uid);
     await Promise.all(notifs.map(n => window.fb.deleteDoc(this._doc('notifications', n.id)).catch(() => {})));
   },

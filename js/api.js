@@ -437,6 +437,19 @@ const Api = {
     return { inWishlist: !has, list: updated };
   },
 
+  /* ---------------- notícias salvas (bookmarks) ---------------- */
+  async getBookmarks(ownerKey){
+    return DB.getBookmarks(ownerKey);
+  },
+
+  async toggleBookmark(ownerKey, articleId){
+    const list = await DB.getBookmarks(ownerKey);
+    const has = list.includes(articleId);
+    const updated = has ? list.filter(id => id !== articleId) : [...list, articleId];
+    await DB.saveBookmarks(ownerKey, updated);
+    return { bookmarked: !has, list: updated };
+  },
+
   /* ---------------- avaliações de produtos ---------------- */
   async getReviews(productId){
     const list = await DB.getReviewsByProduct(productId);
@@ -509,9 +522,10 @@ const Api = {
   async exportAccountData(userId){
     const user = await DB.getUserById(userId);
     if (!user) throw { message: 'Usuário não encontrado.' };
-    const [orders, wishlist, cart, comments, reviews, notifications] = await Promise.all([
+    const [orders, wishlist, bookmarks, cart, comments, reviews, notifications] = await Promise.all([
       DB.getOrdersByOwner(userId),
       DB.getWishlist(userId),
+      DB.getBookmarks(userId),
       DB.getCart(userId),
       DB.getCommentsByUser(userId),
       DB.getReviewsByUser(userId),
@@ -520,7 +534,7 @@ const Api = {
     return {
       exportedAt: new Date().toISOString(),
       profile: this._publicUser(user),
-      orders, wishlist, cart, comments, reviews, notifications
+      orders, wishlist, bookmarks, cart, comments, reviews, notifications
     };
   },
 
