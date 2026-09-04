@@ -2001,7 +2001,7 @@ function renderOrderSuccessView(order){
 function openProfilePanel(initialTab = 'perfil'){
   if (!State.user) return;
   const u = State.user;
-  openModal('md', `
+  openModal('lg', `
     <div class="profile-panel">
       <div class="profile-panel__banner ${u.activeBanner ? 'banner-' + u.activeBanner : ''}" id="panelBanner" style="${u.activeBanner ? '' : (u.bannerImage ? `background-image:url('${u.bannerImage}');background-size:cover;background-position:center;` : `background:${u.banner};`)}"></div>
       <div class="profile-panel__main">
@@ -2369,7 +2369,7 @@ function renderProfileTab(tab){
               <div class="reward-item__title">${Utils.escapeHtml(name)}</div>
               <div class="reward-item__cost">${Icons.svg('diamond', 11)} ${item.cost.toLocaleString('pt-BR')}</div>
             </div>
-            ${btn}
+            <div class="reward-item__actions">${btn}</div>
           </div>`;
       }).join('');
     };

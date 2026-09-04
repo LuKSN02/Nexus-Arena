@@ -173,7 +173,9 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
   border-radius:var(--radius-m); padding:0 12px; height:38px; width:230px;
   color:var(--text-faint); position:relative;
 }
-.search-box input{ background:none; border:none; color:var(--text); font-size:13px; width:100%; outline:none; }
+.search-box input{ background:none; border:none; color:var(--text); font-size:13px; width:100%; outline:none; -webkit-appearance:none; appearance:none; }
+.search-box input::-webkit-search-cancel-button,
+.search-box input::-webkit-search-decoration{ -webkit-appearance:none; appearance:none; }
 .search-box input::placeholder{ color:var(--text-faint); }
 .search-box:focus-within{ border-color:var(--teal); color:var(--teal); }
 
@@ -803,7 +805,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 .reward-section-title{ font-size:11px; letter-spacing:.1em; color:var(--text-faint); margin:14px 0 8px; }
 .reward-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
 .reward-item{
-  display:flex; align-items:center; gap:10px;
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px;
   background:var(--surface-2); border:1px solid var(--border);
   border-radius:var(--radius-m); padding:9px 10px;
 }
@@ -817,9 +819,14 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
   background:var(--surface); border:1px solid var(--gold); color:var(--gold);
   font-size:10.5px; font-weight:700; white-space:nowrap;
 }
-.reward-item__info{ flex:1; min-width:0; }
+.reward-item__info{ flex:1 1 90px; min-width:90px; }
 .reward-item__title{ font-size:12px; font-weight:600; line-height:1.3; }
 .reward-item__cost{ display:flex; align-items:center; gap:4px; font-family:var(--f-mono); font-size:11px; color:var(--gold); margin-top:2px; }
+/* Linha própria para o(s) botão(ões): evita sobreposição com título/preço
+   quando o rótulo é longo ("Mestre Estrategista") ou há dois botões lado a
+   lado ("Em uso" + "Remover") — sempre tem a largura toda do card disponível,
+   em vez de disputar espaço com preview/título na mesma linha. */
+.reward-item__actions{ flex:1 0 100%; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
 
 .profile-tabs{
   display:flex; gap:4px; padding:0 20px; border-bottom:1px solid var(--border-soft);
@@ -827,8 +834,8 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 }
 .profile-tabs::-webkit-scrollbar{ display:none; }
 .ptab{
-  padding:12px 4px; margin-right:20px; background:none; border:none; border-bottom:2px solid transparent;
-  color:var(--text-faint); font-size:12.5px; font-weight:700; letter-spacing:.03em;
+  padding:12px 4px; margin-right:14px; background:none; border:none; border-bottom:2px solid transparent;
+  color:var(--text-faint); font-size:12px; font-weight:700; letter-spacing:.02em;
   white-space:nowrap; flex:0 0 auto;
 }
 .ptab.active{ color:var(--text); border-color:var(--signal); }
