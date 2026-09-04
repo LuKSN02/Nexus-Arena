@@ -2716,8 +2716,10 @@ function openImageCropper(dataUrl, { shape = 'circle', outW, outH, onApply, onCa
   }, { passive: false });
 
   cancelBtn.addEventListener('click', () => {
-    closeModal();
-    if (onCancel) onCancel();
+    // Não fecha o modal aqui: quando onCancel reabre outro modal (ex.:
+    // openProfilePanel), o setTimeout de closeModal() que limpa #modalRoot
+    // dispara ~200ms depois e apaga o conteúdo recém-aberto por cima.
+    if (onCancel) onCancel(); else closeModal();
   });
 
   applyBtn.addEventListener('click', () => {
@@ -2733,8 +2735,9 @@ function openImageCropper(dataUrl, { shape = 'circle', outW, outH, onApply, onCa
     const ctx = canvas.getContext('2d');
     ctx.drawImage(imgEl, sX, sY, sW, sH, 0, 0, outW, outH);
     const outDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-    closeModal();
-    onApply(outDataUrl);
+    // mesmo motivo do cancelar: deixa o onApply (que reabre o perfil) decidir
+    // quando/como trocar o conteúdo do modal, em vez de fechar antes.
+    if (onApply) onApply(outDataUrl); else closeModal();
   });
 }
 
