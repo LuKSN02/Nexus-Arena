@@ -151,7 +151,13 @@ async function init(){
 
   // Se acabamos de voltar do redirect do Discord, isso resolve com o
   // usuário já logado/criado. Senão, cai no fluxo normal de sessão.
-  let current = await Api.handleDiscordRedirect();
+  let current = null;
+  try{
+    current = await Api.handleDiscordRedirect();
+  }catch(err){
+    console.error('Erro inesperado no login com Discord:', err);
+    Toast.show('Não foi possível entrar com o Discord. Tente novamente.', 'error', 'alertCircle');
+  }
   if (!current) current = await Api.onAuthReady();
   if (current){
     State.user = current;

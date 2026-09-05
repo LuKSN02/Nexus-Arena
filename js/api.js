@@ -83,44 +83,71 @@ const Api = {
       return null;
     }
 
-    // Se já existe uma sessão (anônima ou não) nesse navegador, reaproveita.
-    // Só cria uma sessão anônima nova se realmente não tiver nenhuma.
-    let fbUser = window.fb.auth.currentUser;
-    if (!fbUser){
-      try{
-        const cred = await window.fb.signInAnonymously(window.fb.auth);
-        fbUser = cred.user;
-      }catch(err){
-        console.error('Erro ao criar sessão anônima:', err);
+    // Cria (ou reaproveita) a sessão anônima do Firebase Auth que serve de
+    // "uid" pra pendurar o perfil no Firestore.
+    const startFreshSession = async () => {
+      const cred = await window.fb.signInAnonymously(window.fb.auth);
+      // Força a renovação do token ANTES de usar o Firestore — sem isso,
+      // a primeira leitura/escrita pode sair antes do SDK terminar de
+      // propagar a sessão nova, e o Firestore recusa com "permissão
+      // insuficiente" mesmo a sessão sendo válida.
+      await cred.user.getIdToken(true);
+      return cred.user;
+    };
+
+    let fbUser;
+    let profile;
+    try{
+      fbUser = window.fb.auth.currentUser || await startFreshSession();
+      profile = await DB.getUserById(fbUser.uid);
+    }catch(err){
+      if (err.code === 'permission-denied'){
+        // Sessão existente inválida por algum motivo (ex.: apagada na mão
+        // no console do Firebase durante testes) — descarta e recomeça.
+        try{
+          fbUser = await startFreshSession();
+          profile = await DB.getUserById(fbUser.uid);
+        }catch(err2){
+          console.error('Erro ao criar sessão para o login com Discord:', err2);
+          Toast.show('Não foi possível iniciar a sessão. Tente novamente.', 'error', 'alertCircle');
+          return null;
+        }
+      } else {
+        console.error('Erro ao criar sessão para o login com Discord:', err);
         Toast.show('Não foi possível iniciar a sessão. Tente novamente.', 'error', 'alertCircle');
         return null;
       }
     }
 
-    let profile = await DB.getUserById(fbUser.uid);
-    if (!profile){
-      const avatarUrl = discordUser.avatar
-        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
-        : null;
-      const username = (discordUser.global_name || discordUser.username || 'Jogador').replace(/\s+/g, '').slice(0, 20);
-      const tag = String(Math.floor(1000 + Math.random() * 9000));
-      const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
-      const newProfile = {
-        username, usernameLower: username.toLowerCase(),
-        tag, email: discordUser.email, emailLower: discordUser.email.toLowerCase(),
-        avatar: avatarUrl || Utils.avatarDataUri(username, bg),
-        banner: bg,
-        bannerImage: null,
-        customStatus: '',
-        badges: ['founder'],
-        coins: 0,
-        activeFrame: null,
-        unlockedFrames: [],
-        authProvider: 'discord',
-        discordId: discordUser.id,
-        createdAt: new Date().toISOString()
-      };
-      profile = await DB.upsertUser(fbUser.uid, newProfile);
+    try{
+      if (!profile){
+        const avatarUrl = discordUser.avatar
+          ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+          : null;
+        const username = (discordUser.global_name || discordUser.username || 'Jogador').replace(/\s+/g, '').slice(0, 20);
+        const tag = String(Math.floor(1000 + Math.random() * 9000));
+        const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
+        const newProfile = {
+          username, usernameLower: username.toLowerCase(),
+          tag, email: discordUser.email, emailLower: discordUser.email.toLowerCase(),
+          avatar: avatarUrl || Utils.avatarDataUri(username, bg),
+          banner: bg,
+          bannerImage: null,
+          customStatus: '',
+          badges: ['founder'],
+          coins: 0,
+          activeFrame: null,
+          unlockedFrames: [],
+          authProvider: 'discord',
+          discordId: discordUser.id,
+          createdAt: new Date().toISOString()
+        };
+        profile = await DB.upsertUser(fbUser.uid, newProfile);
+      }
+    }catch(err){
+      console.error('Erro ao salvar perfil do Discord no Firestore:', err);
+      Toast.show('Não foi possível salvar seu perfil. Tente novamente.', 'error', 'alertCircle');
+      return null;
     }
     return this._publicUser(profile);
   },
