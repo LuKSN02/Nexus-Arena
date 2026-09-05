@@ -37,6 +37,25 @@
 const DISCORD_CLIENT_ID = '1545831405936836658';
 const DISCORD_SCOPE = 'identify email';
 
+// Tenta de novo (com uma pequena espera) quando o Firestore recusa por
+// "permission-denied" — usado logo após qualquer login novo, porque às
+// vezes a 1ª ou 2ª chamada saem antes do SDK terminar de propagar a sessão
+// recém-criada pros outros lugares (o Firestore só vê a sessão via um
+// listener interno, que é assíncrono).
+async function withPermissionRetry(fn, { retries = 2, delayMs = 350 } = {}){
+  for (let attempt = 0; ; attempt++){
+    try{
+      return await fn();
+    }catch(err){
+      if (err && err.code === 'permission-denied' && attempt < retries){
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 const Api = {
 
   /* -------------------- login com Discord (OAuth2 manual) -------------------- */
@@ -84,29 +103,36 @@ const Api = {
     }
 
     // Cria (ou reaproveita) a sessão anônima do Firebase Auth que serve de
-    // "uid" pra pendurar o perfil no Firestore.
-    const startFreshSession = async () => {
-      const cred = await window.fb.signInAnonymously(window.fb.auth);
-      // Força a renovação do token ANTES de usar o Firestore — sem isso,
-      // a primeira leitura/escrita pode sair antes do SDK terminar de
-      // propagar a sessão nova, e o Firestore recusa com "permissão
-      // insuficiente" mesmo a sessão sendo válida.
-      await cred.user.getIdToken(true);
-      return cred.user;
+    // "uid" pra pendurar o perfil no Firestore. Sempre força a renovação do
+    // token antes de tocar no Firestore — mesmo reaproveitando uma sessão já
+    // aberta — porque sem isso a primeira leitura/escrita pode sair antes do
+    // SDK terminar de propagar a sessão, e o Firestore recusa com
+    // "permissão insuficiente" mesmo a sessão sendo válida.
+    const ensureSession = async () => {
+      let user = window.fb.auth.currentUser;
+      if (!user){
+        const cred = await window.fb.signInAnonymously(window.fb.auth);
+        user = cred.user;
+      }
+      await user.getIdToken(true);
+      return user;
     };
 
     let fbUser;
     let profile;
     try{
-      fbUser = window.fb.auth.currentUser || await startFreshSession();
-      profile = await DB.getUserById(fbUser.uid);
+      fbUser = await ensureSession();
+      profile = await withPermissionRetry(() => DB.getUserById(fbUser.uid));
     }catch(err){
       if (err.code === 'permission-denied'){
         // Sessão existente inválida por algum motivo (ex.: apagada na mão
         // no console do Firebase durante testes) — descarta e recomeça.
         try{
-          fbUser = await startFreshSession();
-          profile = await DB.getUserById(fbUser.uid);
+          await window.fb.signOut(window.fb.auth).catch(() => {});
+          const cred = await window.fb.signInAnonymously(window.fb.auth);
+          await cred.user.getIdToken(true);
+          fbUser = cred.user;
+          profile = await withPermissionRetry(() => DB.getUserById(fbUser.uid));
         }catch(err2){
           console.error('Erro ao criar sessão para o login com Discord:', err2);
           Toast.show('Não foi possível iniciar a sessão. Tente novamente.', 'error', 'alertCircle');
@@ -142,7 +168,7 @@ const Api = {
           discordId: discordUser.id,
           createdAt: new Date().toISOString()
         };
-        profile = await DB.upsertUser(fbUser.uid, newProfile);
+        profile = await withPermissionRetry(() => DB.upsertUser(fbUser.uid, newProfile));
       }
     }catch(err){
       console.error('Erro ao salvar perfil do Discord no Firestore:', err);
@@ -598,7 +624,7 @@ const Api = {
 
   /* ---------------- carrinho ---------------- */
   async getCart(ownerKey){
-    return DB.getCart(ownerKey);
+    return withPermissionRetry(() => DB.getCart(ownerKey));
   },
 
   async saveCart(ownerKey, items){
@@ -626,7 +652,7 @@ const Api = {
 
   /* ---------------- lista de desejos ---------------- */
   async getWishlist(ownerKey){
-    return DB.getWishlist(ownerKey);
+    return withPermissionRetry(() => DB.getWishlist(ownerKey));
   },
 
   async toggleWishlist(ownerKey, productId){
@@ -639,7 +665,7 @@ const Api = {
 
   /* ---------------- notícias salvas (bookmarks) ---------------- */
   async getBookmarks(ownerKey){
-    return DB.getBookmarks(ownerKey);
+    return withPermissionRetry(() => DB.getBookmarks(ownerKey));
   },
 
   async toggleBookmark(ownerKey, articleId){
@@ -652,13 +678,15 @@ const Api = {
 
   /* ---------------- passe de batalha ---------------- */
   async getSeasonPass(ownerKey){
-    const season = BATTLE_PASS_SEASON;
-    let pass = await DB.getSeasonPass(ownerKey);
-    if (!pass || pass.seasonId !== season.id){
-      pass = { seasonId: season.id, xp: 0, level: 1, hasPremium: false, claimedFree: [], claimedPremium: [] };
-      await DB.saveSeasonPass(ownerKey, pass);
-    }
-    return pass;
+    return withPermissionRetry(async () => {
+      const season = BATTLE_PASS_SEASON;
+      let pass = await DB.getSeasonPass(ownerKey);
+      if (!pass || pass.seasonId !== season.id){
+        pass = { seasonId: season.id, xp: 0, level: 1, hasPremium: false, claimedFree: [], claimedPremium: [] };
+        await DB.saveSeasonPass(ownerKey, pass);
+      }
+      return pass;
+    });
   },
 
   async grantSeasonXp(ownerKey, amount){
@@ -747,7 +775,7 @@ const Api = {
   /* ============================== NOTIFICAÇÕES ============================== */
 
   async getNotifications(ownerKey){
-    const list = await DB.getNotifications(ownerKey);
+    const list = await withPermissionRetry(() => DB.getNotifications(ownerKey));
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 

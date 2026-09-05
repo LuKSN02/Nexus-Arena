@@ -161,8 +161,16 @@ async function init(){
   if (!current) current = await Api.onAuthReady();
   if (current){
     State.user = current;
-    State.cart = await Api.getCart(cartOwnerKey());
-    await enterApp();
+    try{
+      State.cart = await Api.getCart(cartOwnerKey());
+      await enterApp();
+    }catch(err){
+      console.error('Erro ao carregar a sessão:', err);
+      Toast.show('Algo deu errado ao carregar sua conta. Tente recarregar a página.', 'error', 'alertCircle');
+      State.user = null;
+      State.cart = await DB.getCart('guest');
+      showAuthScreen();
+    }
   } else {
     State.cart = await DB.getCart('guest');
     showAuthScreen();
