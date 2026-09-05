@@ -1509,52 +1509,72 @@ function openSeasonPassModal(){
   const pass = State.seasonPass;
   if (!pass) return;
   const xpIntoLevel = pass.xp - (pass.level - 1) * season.xpPerLevel;
-  const pctLabel = pass.level >= season.maxLevel ? 'Nível máximo!' : `${xpIntoLevel} / ${season.xpPerLevel} XP para o próximo nível`;
+  const xpPct = pass.level >= season.maxLevel ? 100 : Math.round((xpIntoLevel / season.xpPerLevel) * 100);
+  const xpLabel = pass.level >= season.maxLevel ? 'NÍVEL MÁXIMO' : `${xpIntoLevel} / ${season.xpPerLevel} XP`;
 
   const milestones = Object.keys(season.rewards.free).map(Number).sort((a, b) => a - b);
+  // a coluna "atual" é o próximo marco ainda não resgatado por completo — é
+  // nela que colocamos o brilho, igual ao "próximo item" em destaque no
+  // passe do Fortnite.
+  const nextIdx = milestones.findIndex(level =>
+    !(pass.claimedFree.includes(level) && (pass.claimedPremium.includes(level) || !pass.hasPremium))
+  );
 
-  const rowHtml = milestones.map(level => {
-    const freeReward = season.rewards.free[level];
-    const premiumReward = season.rewards.premium[level];
+  const tileHtml = (level, reward, track) => {
+    const claimed = (track === 'free' ? pass.claimedFree : pass.claimedPremium).includes(level);
+    const locked = track === 'premium' && !pass.hasPremium;
     const reached = pass.level >= level;
+    const claimable = reached && !claimed && !locked;
 
-    const trackHtml = (reward, track) => {
-      const claimed = (track === 'free' ? pass.claimedFree : pass.claimedPremium).includes(level);
-      const locked = track === 'premium' && !pass.hasPremium;
-      let action;
-      if (locked) action = `<span class="pass-level__lock">${Icons.svg('lock', 13)} Premium</span>`;
-      else if (claimed) action = `<span class="pass-level__claimed">${Icons.svg('checkCircle', 13)} Resgatado</span>`;
-      else if (reached) action = `<button type="button" class="btn btn-sm btn-primary" data-claim-level="${level}" data-claim-track="${track}">Resgatar</button>`;
-      else action = `<span class="pass-level__pending">Bloqueado</span>`;
-      return `
-        <div class="pass-level__track ${track === 'premium' ? 'pass-level__track--premium' : ''}">
-          <span class="pass-level__reward">${Icons.svg('diamond', 13)} ${reward.amount.toLocaleString('pt-BR')}</span>
-          ${action}
-        </div>`;
-    };
+    let overlay = '';
+    if (locked) overlay = `<span class="bp-tile__overlay bp-tile__overlay--lock">${Icons.svg('lock', 16)}</span>`;
+    else if (claimed) overlay = `<span class="bp-tile__overlay bp-tile__overlay--done">${Icons.svg('checkCircle', 18)}</span>`;
+    else if (!reached) overlay = `<span class="bp-tile__overlay bp-tile__overlay--pending">${Icons.svg('lock', 16)}</span>`;
 
     return `
-      <div class="pass-level ${reached ? 'pass-level--reached' : ''}">
-        <div class="pass-level__badge">Nível ${level}</div>
-        ${trackHtml(freeReward, 'free')}
-        ${trackHtml(premiumReward, 'premium')}
-      </div>`;
-  }).join('');
+      <button type="button"
+        class="bp-tile bp-tile--${track} ${claimed ? 'bp-tile--claimed' : ''} ${claimable ? 'bp-tile--claimable' : ''} ${locked || !reached ? 'bp-tile--locked' : ''}"
+        ${claimable ? `data-claim-level="${level}" data-claim-track="${track}"` : 'disabled'}
+        aria-label="Nível ${level}, trilha ${track === 'premium' ? 'premium' : 'grátis'}, recompensa ${reward.amount} moedas${claimed ? ', já resgatada' : ''}">
+        <span class="bp-tile__icon">${Icons.svg('diamond', 20)}</span>
+        <span class="bp-tile__amount">${reward.amount.toLocaleString('pt-BR')}</span>
+        ${overlay}
+      </button>`;
+  };
+
+  const columnsHtml = milestones.map((level, i) => `
+    <div class="bp-col ${i === nextIdx ? 'bp-col--current' : ''}">
+      ${tileHtml(level, season.rewards.premium[level], 'premium')}
+      <div class="bp-col__level">${level}</div>
+      ${tileHtml(level, season.rewards.free[level], 'free')}
+    </div>
+  `).join('');
 
   openModal('lg', `
-    <div class="pass-modal">
-      <div class="pass-modal__header">
-        <div>
-          <h3>${Utils.escapeHtml(season.name)}</h3>
-          <p class="pass-modal__sub">Nível ${pass.level} de ${season.maxLevel} · ${pctLabel}</p>
+    <div class="bp-modal">
+      <div class="bp-modal__banner">
+        <div class="bp-modal__level-badge">
+          <span class="bp-modal__level-num">${pass.level}</span>
+          <span class="bp-modal__level-tag">NÍVEL</span>
         </div>
-        ${!pass.hasPremium ? `<button type="button" class="btn btn-primary btn-sm" id="passUnlockPremiumBtn">Desbloquear Premium</button>` : `<span class="pass-modal__premium-badge">${Icons.svg('star', 13)} Premium ativo</span>`}
+        <div class="bp-modal__info">
+          <h3>${Utils.escapeHtml(season.name)}</h3>
+          <div class="bp-modal__xp-bar"><div class="bp-modal__xp-fill" style="width:${xpPct}%"></div></div>
+          <p class="bp-modal__xp-label">${xpLabel}</p>
+        </div>
+        ${!pass.hasPremium
+          ? `<button type="button" class="btn btn-primary btn-sm" id="passUnlockPremiumBtn">${Icons.svg('star', 14)} Desbloquear Premium</button>`
+          : `<span class="bp-modal__premium-badge">${Icons.svg('star', 13)} Premium ativo</span>`}
       </div>
-      <div class="pass-modal__progress"><div class="pass-modal__progress-fill" style="width:${pass.level >= season.maxLevel ? 100 : Math.round((xpIntoLevel / season.xpPerLevel) * 100)}%"></div></div>
-      <div class="pass-modal__columns-label">
-        <span>Trilha grátis</span><span>Trilha premium</span>
+
+      <div class="bp-track-labels">
+        <span class="bp-track-labels__premium">${Icons.svg('star', 12)} Trilha premium</span>
+        <span class="bp-track-labels__free">Trilha grátis</span>
       </div>
-      <div class="pass-track">${rowHtml}</div>
+
+      <div class="bp-track-scroll">
+        <div class="bp-track">${columnsHtml}</div>
+      </div>
     </div>
   `, 'PASSE DE BATALHA');
 
