@@ -29,7 +29,6 @@ import {
   deleteUser as fbDeleteUser,
   sendPasswordResetEmail,
   GoogleAuthProvider,
-  FacebookAuthProvider,
   TwitterAuthProvider,
   OAuthProvider,
   signInWithPopup
@@ -68,7 +67,6 @@ window.fb = {
   // ---- login social (OAuth2) ----
   signInWithPopup,
   googleProvider: new GoogleAuthProvider(),
-  facebookProvider: new FacebookAuthProvider(),
   twitterProvider: new TwitterAuthProvider(),
   // Discord não é um provedor nativo do Firebase Auth — precisa ser cadastrado
   // manualmente como provedor OIDC genérico em Authentication → Sign-in method

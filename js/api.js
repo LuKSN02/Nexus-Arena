@@ -155,7 +155,6 @@ const Api = {
   async loginWithProvider(providerKey){
     const providerMap = {
       google: window.fb.googleProvider,
-      facebook: window.fb.facebookProvider,
       x: window.fb.twitterProvider,
       discord: window.fb.discordProvider
     };
