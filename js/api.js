@@ -75,13 +75,26 @@ const Api = {
   // sessão normal do Firebase. Retorna o usuário público se veio um token
   // de volta do Discord na URL; retorna null se não tinha nada pra processar.
   async handleDiscordRedirect(){
-    if (!location.hash || !location.hash.includes('access_token')) return null;
+    if (!location.hash) return null;
+    // DEBUG TEMPORÁRIO: mostra no console exatamente o que o Discord mandou
+    // de volta na URL, antes de qualquer limpeza — remova depois de resolver.
+    console.log('[discord-login debug] hash recebido do Discord:', location.hash);
+
+    if (!location.hash.includes('access_token') && !location.hash.includes('error')) return null;
 
     const params = new URLSearchParams(location.hash.slice(1));
     const accessToken = params.get('access_token');
+    const oauthError = params.get('error');
+    const oauthErrorDesc = params.get('error_description');
     // Limpa o #fragmento da URL pra não deixar o token exposto no histórico
     // do navegador nem processar de novo se a pessoa der F5.
     history.replaceState(null, '', location.pathname + location.search);
+
+    if (oauthError){
+      console.error('[discord-login debug] Discord retornou erro:', oauthError, oauthErrorDesc);
+      Toast.show(`Discord recusou o login: ${oauthErrorDesc || oauthError}`, 'error', 'alertCircle');
+      return null;
+    }
     if (!accessToken) return null;
 
     let discordUser;
