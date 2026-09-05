@@ -147,7 +147,14 @@ async function init(){
   bindGlobalDelegatedEvents();
   bindAccessibilityEvents();
 
-  await Api.seedIfNeeded();
+  try{
+    await Api.seedIfNeeded();
+  }catch(err){
+    // DEBUG TEMPORÁRIO: antes isso derrubava a init() inteira sem aviso
+    // nenhum (por isso a página "travava" depois do login com Discord —
+    // essa chamada roda ANTES do handleDiscordRedirect, mais abaixo).
+    console.error('[discord-login debug] seedIfNeeded falhou, mas o boot continua:', err.code || err.name, err.message);
+  }
 
   // Se acabamos de voltar do redirect do Discord, isso resolve com o
   // usuário já logado/criado. Senão, cai no fluxo normal de sessão.

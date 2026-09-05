@@ -234,10 +234,20 @@ const DB = {
 
   // ---- seed de conteúdo de demonstração (roda 1x só, globalmente) ----
   async isSeeded(){
-    const snap = await window.fb.getDoc(this._doc('meta', 'seedStatus'));
-    return snap.exists();
+    try{
+      const snap = await window.fb.getDoc(this._doc('meta', 'seedStatus'));
+      return snap.exists();
+    }catch(err){
+      console.error('[discord-login debug] leitura de meta/seedStatus falhou:', err.code || err.name, err.message);
+      throw err;
+    }
   },
   async markSeeded(){
-    await window.fb.setDoc(this._doc('meta', 'seedStatus'), { seeded: true, seededAt: new Date().toISOString() });
+    try{
+      await window.fb.setDoc(this._doc('meta', 'seedStatus'), { seeded: true, seededAt: new Date().toISOString() });
+    }catch(err){
+      console.error('[discord-login debug] escrita em meta/seedStatus falhou:', err.code || err.name, err.message);
+      throw err;
+    }
   }
 };
