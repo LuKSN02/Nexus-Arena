@@ -361,3 +361,37 @@ const COUPONS = [
   { code: 'BEMVINDO20', type: 'percent', value: 20, label: '20% de desconto de boas-vindas' },
   { code: 'FRETEGRATIS', type: 'shipping', value: 0, label: 'Frete grátis' }
 ];
+
+/* ==========================================================================
+   PASSE DE BATALHA — temporada ativa
+   Reaproveita o produto 'p8' ("Passe de Temporada — Ligas Nexus") já vendido
+   na loja: comprá-lo ativa a trilha premium abaixo. Recompensas em marcos de
+   5 níveis, em moedas Nexus (a trilha premium sempre paga mais que a grátis).
+   Trocar de temporada = só editar este objeto (o progresso antigo fica
+   guardado no doc anterior, já que o histórico não é sobrescrito).
+   ========================================================================== */
+const BATTLE_PASS_SEASON = {
+  id: 'season-01',
+  name: 'Circuito Nexus — Temporada 1',
+  maxLevel: 30,
+  xpPerLevel: 500,
+  premiumProductId: 'p8',
+  rewards: {
+    free: {
+      5:  { type: 'coins', amount: 300 },
+      10: { type: 'coins', amount: 500 },
+      15: { type: 'coins', amount: 800 },
+      20: { type: 'coins', amount: 1000 },
+      25: { type: 'coins', amount: 1200 },
+      30: { type: 'coins', amount: 2000 }
+    },
+    premium: {
+      5:  { type: 'coins', amount: 800 },
+      10: { type: 'coins', amount: 1200 },
+      15: { type: 'coins', amount: 1800 },
+      20: { type: 'coins', amount: 2400 },
+      25: { type: 'coins', amount: 3000 },
+      30: { type: 'coins', amount: 5000 }
+    }
+  }
+};

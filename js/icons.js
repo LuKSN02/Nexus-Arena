@@ -60,7 +60,9 @@ const ICON_PATHS = {
   facebook: '<path d="M14 21v-8h2.7l.4-3.4H14V7.4c0-1 .3-1.6 1.7-1.6H17V2.8c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.7H8v3.4h2.5V21"/>',
   instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="3.8"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/>',
   zoomIn: '<circle cx="10.5" cy="10.5" r="6.5"/><line x1="21" y1="21" x2="15.8" y2="15.8"/><line x1="10.5" y1="7.5" x2="10.5" y2="13.5"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/>',
-  zoomOut: '<circle cx="10.5" cy="10.5" r="6.5"/><line x1="21" y1="21" x2="15.8" y2="15.8"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/>'
+  zoomOut: '<circle cx="10.5" cy="10.5" r="6.5"/><line x1="21" y1="21" x2="15.8" y2="15.8"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/>',
+  google: '<path d="M21.6 12.23c0-.68-.06-1.36-.18-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.9-1.75 3-4.32 3-7.32z" fill="#4285F4" stroke="none"/><path d="M12 22c2.7 0 4.97-.9 6.63-2.44l-3.24-2.5c-.9.6-2.06.96-3.4.96-2.6 0-4.8-1.76-5.6-4.12H3.05v2.58A10 10 0 0 0 12 22z" fill="#34A853" stroke="none"/><path d="M6.4 13.9a5.9 5.9 0 0 1 0-3.8V7.52H3.05a10 10 0 0 0 0 8.96l3.35-2.58z" fill="#FBBC05" stroke="none"/><path d="M12 5.98c1.47 0 2.8.5 3.84 1.5l2.88-2.88C16.96 2.98 14.7 2 12 2a10 10 0 0 0-8.95 5.52L6.4 10.1C7.2 7.74 9.4 5.98 12 5.98z" fill="#EA4335" stroke="none"/>',
+  discord: '<path d="M8.5 5.5c2.3-.6 4.7-.6 7 0" /><path d="M6.5 6.7C3.8 7.9 2.3 11 2.5 15.2c1.4 1.4 3.2 2.2 5 2.5l.9-1.5" /><path d="M17.5 6.7c2.7 1.2 4.2 4.3 4 8.5-1.4 1.4-3.2 2.2-5 2.5l-.9-1.5" /><ellipse cx="9" cy="13.2" rx="1.3" ry="1.5" fill="currentColor" stroke="none"/><ellipse cx="15" cy="13.2" rx="1.3" ry="1.5" fill="currentColor" stroke="none"/>'
 };
 
 const Icons = {

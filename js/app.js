@@ -22,6 +22,7 @@ const State = {
   cart: [],
   wishlist: [],
   bookmarks: [],
+  seasonPass: null,
   notifications: [],
   coupon: null,
   maxPrice: 700,
@@ -166,6 +167,7 @@ function fillStaticIcons(){
   $('#notifIcon').innerHTML = Icons.svg('bell', 18);
   $('#coinChipIcon').innerHTML = Icons.svg('diamond', 15);
   $('#coinChipAdd').innerHTML = Icons.svg('plus', 11);
+  $('#passChipIcon').innerHTML = Icons.svg('star', 15);
   $('#drawerCartIcon').innerHTML = Icons.svg('cart', 17);
   $('#mobileMenuBtn').innerHTML = Icons.svg('menu', 18);
   $all('.modal__close').forEach(b => b.innerHTML = Icons.svg('close', 15));
@@ -194,6 +196,8 @@ async function enterApp(){
   State.wishlist = await Api.getWishlist(cartOwnerKey());
   renderWishlistBadge();
   State.bookmarks = await Api.getBookmarks(cartOwnerKey());
+  State.seasonPass = await Api.getSeasonPass(cartOwnerKey());
+  updateSeasonPassChip();
   State.notifications = await Api.getNotifications(cartOwnerKey());
   renderNotifBadge();
 
@@ -218,6 +222,7 @@ async function claimDailyBonusIfAvailable(){
     const streakMsg = result.streak > 1 ? ` (sequência de ${result.streak} dias)` : '';
     Toast.show(`+${result.amount} moedas Nexus — bônus diário${streakMsg}!`, 'success', 'diamond');
     await pushNotification('order', 'Bônus diário resgatado', `Você recebeu ${result.amount} moedas Nexus só por logar hoje${streakMsg}.`);
+    await grantSeasonXp(50);
   }catch(err){
     console.error('Erro ao resgatar bônus diário:', err);
   }
@@ -260,6 +265,26 @@ function showFormAlert(containerSel, message, type = 'error'){
 
 function bindAuthEvents(){
   $all('.auth-tab').forEach(tab => tab.addEventListener('click', () => switchAuthTab(tab.dataset.tab)));
+
+  // ---- login social (OAuth2) ----
+  $all('[data-social-icon]').forEach(el => {
+    el.innerHTML = Icons.svg(el.dataset.socialIcon, 18);
+  });
+  $all('[data-social]').forEach(btn => btn.addEventListener('click', async () => {
+    $('#authAlert').innerHTML = '';
+    btn.disabled = true;
+    try{
+      const user = await Api.loginWithProvider(btn.dataset.social);
+      State.user = user;
+      State.cart = await Api.getCart(cartOwnerKey());
+      Toast.show(`Bem-vindo, ${user.username}!`, 'success', 'checkCircle');
+      await enterApp();
+    }catch(err){
+      showFormAlert('#authAlert', err.message || 'Não foi possível entrar com essa rede.');
+    }finally{
+      btn.disabled = false;
+    }
+  }));
 
   document.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'gotoRegister'){ e.preventDefault(); switchAuthTab('register'); }
@@ -482,6 +507,7 @@ function bindShellEvents(){
 
   $('#profileChip').addEventListener('click', () => openProfilePanel());
   $('#coinChipBtn').addEventListener('click', () => openProfilePanel('recompensas'));
+  $('#passChipBtn').addEventListener('click', () => openSeasonPassModal());
 
   $('#footerProfileLink').addEventListener('click', (e) => { e.preventDefault(); openProfilePanel(); });
   $('#footerWishlistLink').addEventListener('click', (e) => { e.preventDefault(); openWishlistModal(); });
@@ -768,7 +794,12 @@ function filteredArticles(){
   return State.articles.filter(a => {
     const catOk = State.newsCategory === 'todos' || a.category === State.newsCategory;
     const q = State.searchQuery;
-    const searchOk = !q || a.title.toLowerCase().includes(q) || a.excerpt.toLowerCase().includes(q);
+    // guarda contra um item com título/resumo ausente ou não-string: sem isso,
+    // um único artigo malformado lança exceção dentro do .filter() e derruba
+    // a lista inteira (todas as notícias "somem" de uma vez).
+    const title = typeof a.title === 'string' ? a.title.toLowerCase() : '';
+    const excerpt = typeof a.excerpt === 'string' ? a.excerpt.toLowerCase() : '';
+    const searchOk = !q || title.includes(q) || excerpt.includes(q);
     return catOk && searchOk;
   });
 }
@@ -883,6 +914,7 @@ async function openArticleModal(id){
     $('#articleLikeBtn').setAttribute('aria-pressed', String(res.liked));
     $('#articleLikeCount').textContent = article.likes + res.count;
     renderArticleGrid();
+    if (res.liked) await grantSeasonXp(10);
   });
 
   $('#articleShareBtn').addEventListener('click', () => openShareSheet(id));
@@ -1083,7 +1115,7 @@ async function openShareSheet(articleId){
   const nativeBtn = $('#shareNativeBtn', overlay);
   if (nativeBtn){
     nativeBtn.addEventListener('click', async () => {
-      try{ await navigator.share({ title: article.title, text: article.excerpt, url: shareUrl }); closeSheet(); }
+      try{ await navigator.share({ title: article.title, text: article.excerpt, url: shareUrl }); closeSheet(); await grantSeasonXp(15); }
       catch(err){ /* usuário cancelou o compartilhamento — não é um erro */ }
     });
   }
@@ -1093,6 +1125,7 @@ async function openShareSheet(articleId){
       try{
         await navigator.clipboard.writeText(shareUrl);
         Toast.show('Link copiado para a área de transferência.', 'success', 'link');
+        await grantSeasonXp(15);
       }catch(err){
         Toast.show('Não foi possível copiar o link.', 'error');
       }
@@ -1142,7 +1175,9 @@ async function renderShopView(){
   renderProductGrid();
 
   $('#priceSlider').addEventListener('input', (e) => {
-    State.maxPrice = Number(e.target.value);
+    const val = Number(e.target.value);
+    if (!Number.isFinite(val)) return; // nunca deixa um valor inválido (NaN) zerar o filtro e sumir com tudo
+    State.maxPrice = val;
     State.productPage = 1;
     $('#priceSliderVal').textContent = Utils.brl(State.maxPrice);
     renderProductGrid();
@@ -1172,8 +1207,10 @@ function renderShopFilters(){
 
 function filteredProducts(){
   return State.products.filter(p => {
+    const price = Number(p.price);
+    if (!Number.isFinite(price)) return false; // item com preço corrompido/ausente nunca quebra o filtro dos demais
     const catOk = State.shopCategory === 'todos' || p.category === State.shopCategory;
-    const priceOk = p.price <= State.maxPrice;
+    const priceOk = price <= State.maxPrice;
     const q = State.searchQuery;
     const searchOk = !q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q);
     return catOk && priceOk && searchOk;
@@ -1437,7 +1474,107 @@ async function toggleBookmark(articleId){
     b.classList.toggle('active', res.bookmarked);
     b.setAttribute('aria-pressed', String(res.bookmarked));
   });
+  if (res.bookmarked) await grantSeasonXp(10);
   return res;
+}
+
+/* ============================================================================
+   PASSE DE BATALHA (temporada ativa em BATTLE_PASS_SEASON, ver data.js)
+   ========================================================================== */
+async function grantSeasonXp(amount){
+  if (!State.user) return;
+  const { pass, leveledUp } = await Api.grantSeasonXp(cartOwnerKey(), amount);
+  State.seasonPass = pass;
+  updateSeasonPassChip();
+  if (leveledUp){
+    Toast.show(`Nível ${pass.level} no Passe de Batalha!`, 'success', 'star');
+    await pushNotification('badge', 'Você subiu de nível!', `Chegou ao nível ${pass.level} de "${BATTLE_PASS_SEASON.name}". Resgate suas recompensas.`);
+  }
+}
+
+function updateSeasonPassChip(){
+  const chip = $('#passChipBtn');
+  if (!chip || !State.seasonPass) return;
+  chip.classList.remove('hidden');
+  const season = BATTLE_PASS_SEASON;
+  const pass = State.seasonPass;
+  const xpIntoLevel = pass.xp - (pass.level - 1) * season.xpPerLevel;
+  const pct = pass.level >= season.maxLevel ? 100 : Math.min(100, Math.round((xpIntoLevel / season.xpPerLevel) * 100));
+  $('#passChipLevel').textContent = `Nível ${pass.level}`;
+  $('#passChipBarFill').style.width = pct + '%';
+}
+
+function openSeasonPassModal(){
+  const season = BATTLE_PASS_SEASON;
+  const pass = State.seasonPass;
+  if (!pass) return;
+  const xpIntoLevel = pass.xp - (pass.level - 1) * season.xpPerLevel;
+  const pctLabel = pass.level >= season.maxLevel ? 'Nível máximo!' : `${xpIntoLevel} / ${season.xpPerLevel} XP para o próximo nível`;
+
+  const milestones = Object.keys(season.rewards.free).map(Number).sort((a, b) => a - b);
+
+  const rowHtml = milestones.map(level => {
+    const freeReward = season.rewards.free[level];
+    const premiumReward = season.rewards.premium[level];
+    const reached = pass.level >= level;
+
+    const trackHtml = (reward, track) => {
+      const claimed = (track === 'free' ? pass.claimedFree : pass.claimedPremium).includes(level);
+      const locked = track === 'premium' && !pass.hasPremium;
+      let action;
+      if (locked) action = `<span class="pass-level__lock">${Icons.svg('lock', 13)} Premium</span>`;
+      else if (claimed) action = `<span class="pass-level__claimed">${Icons.svg('checkCircle', 13)} Resgatado</span>`;
+      else if (reached) action = `<button type="button" class="btn btn-sm btn-primary" data-claim-level="${level}" data-claim-track="${track}">Resgatar</button>`;
+      else action = `<span class="pass-level__pending">Bloqueado</span>`;
+      return `
+        <div class="pass-level__track ${track === 'premium' ? 'pass-level__track--premium' : ''}">
+          <span class="pass-level__reward">${Icons.svg('diamond', 13)} ${reward.amount.toLocaleString('pt-BR')}</span>
+          ${action}
+        </div>`;
+    };
+
+    return `
+      <div class="pass-level ${reached ? 'pass-level--reached' : ''}">
+        <div class="pass-level__badge">Nível ${level}</div>
+        ${trackHtml(freeReward, 'free')}
+        ${trackHtml(premiumReward, 'premium')}
+      </div>`;
+  }).join('');
+
+  openModal('lg', `
+    <div class="pass-modal">
+      <div class="pass-modal__header">
+        <div>
+          <h3>${Utils.escapeHtml(season.name)}</h3>
+          <p class="pass-modal__sub">Nível ${pass.level} de ${season.maxLevel} · ${pctLabel}</p>
+        </div>
+        ${!pass.hasPremium ? `<button type="button" class="btn btn-primary btn-sm" id="passUnlockPremiumBtn">Desbloquear Premium</button>` : `<span class="pass-modal__premium-badge">${Icons.svg('star', 13)} Premium ativo</span>`}
+      </div>
+      <div class="pass-modal__progress"><div class="pass-modal__progress-fill" style="width:${pass.level >= season.maxLevel ? 100 : Math.round((xpIntoLevel / season.xpPerLevel) * 100)}%"></div></div>
+      <div class="pass-modal__columns-label">
+        <span>Trilha grátis</span><span>Trilha premium</span>
+      </div>
+      <div class="pass-track">${rowHtml}</div>
+    </div>
+  `, 'PASSE DE BATALHA');
+
+  const premiumBtn = $('#passUnlockPremiumBtn');
+  if (premiumBtn) premiumBtn.addEventListener('click', () => { closeModal(); navigateTo('shop'); });
+
+  $all('[data-claim-level]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try{
+      const { pass: updated, reward, coins } = await Api.claimSeasonReward(cartOwnerKey(), Number(b.dataset.claimLevel), b.dataset.claimTrack);
+      State.seasonPass = updated;
+      State.user.coins = coins;
+      updateCoinChip();
+      Toast.show(`+${reward.amount.toLocaleString('pt-BR')} moedas resgatadas!`, 'success', 'diamond');
+      openSeasonPassModal();
+    }catch(err){
+      Toast.show(err.message || 'Não foi possível resgatar essa recompensa.', 'error');
+      b.disabled = false;
+    }
+  }));
 }
 
 function openWishlistModal(){
@@ -1945,6 +2082,8 @@ async function submitOrder(){
         unlocked.add('cyber');
         patch.unlockedFrames = [...unlocked];
         patch.activeFrame = 'cyber';
+        State.seasonPass = await Api.activateSeasonPremium(State.user.id);
+        updateSeasonPassChip();
       }
 
       if (gainedBuyer || gainedPass) patch.badges = [...newBadges];
@@ -1959,9 +2098,10 @@ async function submitOrder(){
           await pushNotification('order', 'Moedas creditadas', `${coinsGained.toLocaleString('pt-BR')} moedas Nexus foram adicionadas ao seu saldo.`);
         }
         if (gainedPass){
-          await pushNotification('badge', 'Passe de Temporada ativado', 'Você desbloqueou o emblema e a moldura animada do Passe de Temporada — Ligas Nexus.');
+          await pushNotification('badge', 'Passe de Batalha ativado', 'Sua trilha premium no Passe de Batalha já está liberada — resgate as recompensas dos níveis que você já alcançou.');
         }
       }
+      await grantSeasonXp(40);
     }
     renderOrderSuccessView(order);
     Toast.show('Pedido realizado com sucesso!', 'success', 'checkCircle');
@@ -2470,6 +2610,8 @@ function renderProfileTab(tab){
       State.cart = await Api.getCart('guest');
       State.wishlist = [];
       State.bookmarks = [];
+      State.seasonPass = null;
+      $('#passChipBtn').classList.add('hidden');
       State.coupon = null;
       renderWishlistBadge();
       closeModal();
@@ -2519,6 +2661,7 @@ function renderProfileTab(tab){
         State.cart = [];
         State.wishlist = [];
         State.bookmarks = [];
+        State.seasonPass = null;
         State.notifications = [];
         State.coupon = null;
         closeModal();

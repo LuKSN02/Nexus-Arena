@@ -61,6 +61,14 @@
       <button class="auth-tab" data-tab="register" type="button">Criar conta</button>
     </div>
 
+    <div class="auth-social">
+      <button type="button" class="btn-social" data-social="google" aria-label="Entrar com Google"><span class="btn-social__icon" data-social-icon="google"></span>Google</button>
+      <button type="button" class="btn-social" data-social="facebook" aria-label="Entrar com Facebook"><span class="btn-social__icon" data-social-icon="facebook"></span>Facebook</button>
+      <button type="button" class="btn-social" data-social="x" aria-label="Entrar com X"><span class="btn-social__icon" data-social-icon="x"></span>X</button>
+      <button type="button" class="btn-social" data-social="discord" aria-label="Entrar com Discord"><span class="btn-social__icon" data-social-icon="discord"></span>Discord</button>
+    </div>
+    <div class="auth-social-divider"><span>ou continue com e-mail</span></div>
+
     <!-- ---- LOGIN ---- -->
     <form id="loginForm" novalidate>
       <div class="field">
@@ -159,6 +167,14 @@
         <span class="coin-chip__icon" id="coinChipIcon"></span>
         <span class="coin-chip__amount" id="coinChipAmount">0</span>
         <span class="coin-chip__add" id="coinChipAdd" aria-hidden="true"></span>
+      </button>
+
+      <button class="pass-chip hidden" id="passChipBtn" type="button" aria-label="Abrir Passe de Batalha">
+        <span class="pass-chip__icon" id="passChipIcon"></span>
+        <span class="pass-chip__body">
+          <span class="pass-chip__level" id="passChipLevel">Nível 1</span>
+          <span class="pass-chip__bar"><span class="pass-chip__bar-fill" id="passChipBarFill"></span></span>
+        </span>
       </button>
 
       <button class="icon-btn" id="notifBtn" aria-label="Abrir notificações">

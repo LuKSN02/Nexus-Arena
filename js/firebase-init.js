@@ -27,7 +27,12 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider,
   deleteUser as fbDeleteUser,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  GoogleAuthProvider,
+  FacebookAuthProvider,
+  TwitterAuthProvider,
+  OAuthProvider,
+  signInWithPopup
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 import {
   getFirestore,
@@ -59,7 +64,17 @@ window.fb = {
   updatePassword, reauthenticateWithCredential, EmailAuthProvider, fbDeleteUser, sendPasswordResetEmail,
   doc, setDoc, getDoc, updateDoc, deleteDoc,
   collection, addDoc, query, where, orderBy, limit, getDocs,
-  arrayUnion, arrayRemove
+  arrayUnion, arrayRemove,
+  // ---- login social (OAuth2) ----
+  signInWithPopup,
+  googleProvider: new GoogleAuthProvider(),
+  facebookProvider: new FacebookAuthProvider(),
+  twitterProvider: new TwitterAuthProvider(),
+  // Discord não é um provedor nativo do Firebase Auth — precisa ser cadastrado
+  // manualmente como provedor OIDC genérico em Authentication → Sign-in method
+  // → Add new provider → OpenID Connect, com o ID exatamente "oidc.discord"
+  // (client ID/secret gerados em https://discord.com/developers/applications).
+  discordProvider: new OAuthProvider('oidc.discord')
 };
 
 // Avisa o resto do app que o Firebase já está pronto para uso

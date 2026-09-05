@@ -1060,3 +1060,76 @@ img, svg, video, canvas{ max-width:100%; height:auto; }
 .cropper__zoom input[type="range"]{ flex:1; accent-color:var(--signal); }
 .cropper__actions{ display:flex; gap:10px; width:100%; }
 .cropper__actions .btn{ flex:1; }
+
+/* ==========================================================================
+   LOGIN SOCIAL (OAuth2) — botões na tela de autenticação
+   ========================================================================== */
+.auth-social{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:4px; }
+.btn-social{
+  display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 4px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-m);
+  color:var(--text-dim); font-size:11px; font-weight:600;
+}
+.btn-social:hover{ border-color:var(--text-faint); color:var(--text); }
+.btn-social:disabled{ opacity:.5; }
+.btn-social__icon{ width:20px; height:20px; display:flex; align-items:center; justify-content:center; }
+.auth-social-divider{
+  display:flex; align-items:center; gap:10px; margin:18px 0 16px;
+  color:var(--text-faint); font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;
+}
+.auth-social-divider::before, .auth-social-divider::after{ content:''; flex:1; height:1px; background:var(--border-soft); }
+
+/* ==========================================================================
+   PASSE DE BATALHA — chip da navbar + modal da trilha
+   ========================================================================== */
+.pass-chip{
+  display:flex; align-items:center; gap:8px;
+  height:38px; padding:0 12px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:99px; color:var(--teal);
+}
+.pass-chip:hover{ border-color:var(--teal); }
+.pass-chip__icon{ display:flex; flex:0 0 auto; }
+.pass-chip__body{ display:flex; flex-direction:column; gap:3px; min-width:70px; }
+.pass-chip__level{ font-size:11px; font-weight:700; color:var(--text); line-height:1; text-align:left; }
+.pass-chip__bar{ width:100%; height:4px; border-radius:2px; background:var(--surface-3); overflow:hidden; }
+.pass-chip__bar-fill{ display:block; height:100%; background:var(--teal); border-radius:2px; width:0%; transition:width .3s ease; }
+
+.pass-modal__header{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.pass-modal__header h3{ font-size:16px; margin:0 0 4px; }
+.pass-modal__sub{ font-size:12.5px; color:var(--text-faint); margin:0; }
+.pass-modal__premium-badge{
+  display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:99px;
+  background:var(--surface-2); border:1px solid var(--gold); color:var(--gold);
+  font-size:11.5px; font-weight:700; white-space:nowrap;
+}
+.pass-modal__progress{ height:8px; border-radius:4px; background:var(--surface-3); overflow:hidden; margin-bottom:6px; }
+.pass-modal__progress-fill{ display:block; height:100%; background:var(--teal); border-radius:4px; }
+.pass-modal__columns-label{
+  display:grid; grid-template-columns:90px 1fr 1fr; gap:10px; margin:18px 0 8px;
+  font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-faint);
+}
+.pass-modal__columns-label span:nth-child(1){ grid-column:2; text-align:center; }
+.pass-modal__columns-label span:nth-child(2){ text-align:center; }
+
+.pass-track{ display:flex; flex-direction:column; gap:6px; }
+.pass-level{
+  display:grid; grid-template-columns:90px 1fr 1fr; gap:10px; align-items:center;
+  padding:10px 8px; border-radius:var(--radius-m); background:var(--surface-2); border:1px solid var(--border);
+}
+.pass-level--reached{ border-color:var(--teal); }
+.pass-level__badge{ font-size:12px; font-weight:700; color:var(--text); }
+.pass-level__track{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:8px 10px; border-radius:8px; background:var(--surface-1);
+}
+.pass-level__track--premium{ background:linear-gradient(135deg, rgba(255,196,64,.08), rgba(255,196,64,.02)); border:1px solid rgba(255,196,64,.25); }
+.pass-level__reward{ display:flex; align-items:center; gap:4px; font-family:var(--f-mono); font-size:12px; color:var(--gold); }
+.pass-level__claimed{ display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--teal); font-weight:600; }
+.pass-level__lock{ display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text-faint); }
+.pass-level__pending{ font-size:11.5px; color:var(--text-faint); }
+
+@media (max-width:600px){
+  .pass-chip__body{ display:none; } /* em telas pequenas mostra só o ícone, igual outros icon-btn da navbar */
+  .pass-modal__columns-label, .pass-level{ grid-template-columns:70px 1fr 1fr; }
+}

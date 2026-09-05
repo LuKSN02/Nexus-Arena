@@ -151,6 +151,67 @@ const Api = {
     return this._publicUser({ id: cred.user.uid, ...profile });
   },
 
+  /* ---------------- login social (OAuth2) ---------------- */
+  async loginWithProvider(providerKey){
+    const providerMap = {
+      google: window.fb.googleProvider,
+      facebook: window.fb.facebookProvider,
+      x: window.fb.twitterProvider,
+      discord: window.fb.discordProvider
+    };
+    const provider = providerMap[providerKey];
+    if (!provider) throw { message: 'Provedor de login não suportado.' };
+
+    let result;
+    try{
+      result = await window.fb.signInWithPopup(window.fb.auth, provider);
+    }catch(err){
+      if (err.code === 'auth/operation-not-allowed'){
+        throw { message: 'Esse provedor de login ainda não foi ativado no Firebase. Ative em Authentication → Método de login.' };
+      }
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request'){
+        throw { message: 'Login cancelado.' };
+      }
+      if (err.code === 'auth/account-exists-with-different-credential'){
+        throw { message: 'Já existe uma conta com este e-mail usando outro método de login. Entre com e-mail e senha (ou o provedor original).' };
+      }
+      console.error('Erro no login social:', err);
+      throw { message: `Não foi possível entrar com essa rede. Código do erro: ${err.code || err.message || 'desconhecido'}.` };
+    }
+
+    const fbUser = result.user;
+
+    if (!fbUser.email){
+      // X/Discord nem sempre devolvem e-mail — mantém o e-mail obrigatório
+      // em qualquer forma de cadastro, igual ao fluxo de e-mail/senha.
+      await window.fb.fbDeleteUser(fbUser).catch(() => {});
+      throw { message: 'Não foi possível obter seu e-mail nesse provedor. Tente outro método de login ou libere a permissão de e-mail na tela de autorização.' };
+    }
+
+    let profile = await DB.getUserById(fbUser.uid);
+    if (!profile){
+      const username = (fbUser.displayName || fbUser.email.split('@')[0]).replace(/\s+/g, '').slice(0, 20) || 'Jogador';
+      const tag = String(Math.floor(1000 + Math.random() * 9000));
+      const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
+      const newProfile = {
+        username, usernameLower: username.toLowerCase(),
+        tag, email: fbUser.email, emailLower: fbUser.email.toLowerCase(),
+        avatar: fbUser.photoURL || Utils.avatarDataUri(username, bg),
+        banner: bg,
+        bannerImage: null,
+        customStatus: '',
+        badges: ['founder'],
+        coins: 0,
+        activeFrame: null,
+        unlockedFrames: [],
+        authProvider: providerKey,
+        createdAt: new Date().toISOString()
+      };
+      profile = await DB.upsertUser(fbUser.uid, newProfile);
+    }
+    return this._publicUser(profile);
+  },
+
   async login({ identifier, password }){
     identifier = (identifier || '').trim();
     if (!identifier){
@@ -448,6 +509,55 @@ const Api = {
     const updated = has ? list.filter(id => id !== articleId) : [...list, articleId];
     await DB.saveBookmarks(ownerKey, updated);
     return { bookmarked: !has, list: updated };
+  },
+
+  /* ---------------- passe de batalha ---------------- */
+  async getSeasonPass(ownerKey){
+    const season = BATTLE_PASS_SEASON;
+    let pass = await DB.getSeasonPass(ownerKey);
+    if (!pass || pass.seasonId !== season.id){
+      pass = { seasonId: season.id, xp: 0, level: 1, hasPremium: false, claimedFree: [], claimedPremium: [] };
+      await DB.saveSeasonPass(ownerKey, pass);
+    }
+    return pass;
+  },
+
+  async grantSeasonXp(ownerKey, amount){
+    const season = BATTLE_PASS_SEASON;
+    const pass = await this.getSeasonPass(ownerKey);
+    pass.xp += amount;
+    const newLevel = Math.min(season.maxLevel, 1 + Math.floor(pass.xp / season.xpPerLevel));
+    const leveledUp = newLevel > pass.level;
+    pass.level = newLevel;
+    await DB.saveSeasonPass(ownerKey, pass);
+    return { pass, leveledUp };
+  },
+
+  async claimSeasonReward(ownerKey, level, track){
+    const season = BATTLE_PASS_SEASON;
+    const pass = await this.getSeasonPass(ownerKey);
+    if (pass.level < level) throw { message: 'Você ainda não alcançou esse nível.' };
+    if (track === 'premium' && !pass.hasPremium) throw { message: 'Essa recompensa é exclusiva de quem tem o Passe de Batalha.' };
+    const claimedField = track === 'free' ? 'claimedFree' : 'claimedPremium';
+    if (pass[claimedField].includes(level)) throw { message: 'Recompensa já resgatada.' };
+    const reward = season.rewards[track][level];
+    if (!reward) throw { message: 'Não há recompensa nesse nível.' };
+
+    const profile = await DB.getUserById(ownerKey);
+    const coins = (profile.coins || 0) + reward.amount;
+    await DB.upsertUser(ownerKey, { coins });
+    pass[claimedField].push(level);
+    await DB.saveSeasonPass(ownerKey, pass);
+    return { pass, reward, coins };
+  },
+
+  async activateSeasonPremium(ownerKey){
+    const pass = await this.getSeasonPass(ownerKey);
+    if (!pass.hasPremium){
+      pass.hasPremium = true;
+      await DB.saveSeasonPass(ownerKey, pass);
+    }
+    return pass;
   },
 
   /* ---------------- avaliações de produtos ---------------- */

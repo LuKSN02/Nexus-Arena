@@ -20,6 +20,7 @@
      carts/{uid}               — { items: [{productId, qty}] }
      wishlists/{uid}           — { productIds: [...] }
      bookmarks/{uid}           — { articleIds: [...] } (notícias salvas)
+     seasonPasses/{uid}        — { seasonId, xp, level, hasPremium, claimedFree:[...], claimedPremium:[...] }
      notifications/{id}        — campo ownerKey = uid
      newsletterSubs/{email}    — doc id = e-mail (URL-encoded)
      meta/seedStatus           — trava para o seed de conteúdo de demonstração rodar 1x só
@@ -133,6 +134,15 @@ const DB = {
     await window.fb.setDoc(this._doc('bookmarks', ownerKey), { articleIds }, { merge: true });
   },
 
+  // ---- passe de batalha ----
+  async getSeasonPass(ownerKey){
+    const snap = await window.fb.getDoc(this._doc('seasonPasses', ownerKey));
+    return snap.exists() ? snap.data() : null;
+  },
+  async saveSeasonPass(ownerKey, data){
+    await window.fb.setDoc(this._doc('seasonPasses', ownerKey), data, { merge: true });
+  },
+
   // ---- avaliações de produtos ----
   async getReviewsByProduct(productId){
     const q = window.fb.query(this._col('reviews'), window.fb.where('productId', '==', productId));
@@ -217,6 +227,7 @@ const DB = {
     await window.fb.deleteDoc(this._doc('carts', uid)).catch(() => {});
     await window.fb.deleteDoc(this._doc('wishlists', uid)).catch(() => {});
     await window.fb.deleteDoc(this._doc('bookmarks', uid)).catch(() => {});
+    await window.fb.deleteDoc(this._doc('seasonPasses', uid)).catch(() => {});
     const notifs = await this.getNotifications(uid);
     await Promise.all(notifs.map(n => window.fb.deleteDoc(this._doc('notifications', n.id)).catch(() => {})));
   },
