@@ -34,7 +34,7 @@
    isso vira uma sessão por navegador — a mesma pessoa logando pelo Discord
    em outro aparelho ganha um perfil novo, sem ligação com o primeiro.
    ========================================================================== */
-const DISCORD_CLIENT_ID = '1545831405936836658';
+const DISCORD_CLIENT_ID = 'COLE_AQUI_O_CLIENT_ID_DO_DISCORD';
 const DISCORD_SCOPE = 'identify email';
 
 // Tenta de novo (com uma pequena espera) quando o Firestore recusa por
