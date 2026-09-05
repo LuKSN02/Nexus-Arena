@@ -11,7 +11,119 @@
    carrinho, lista de desejos, notificações) foi para o Firestore.
    ========================================================================== */
 
+/* ==========================================================================
+   Login com Discord — OAuth2 "implicit grant", 100% client-side.
+   --------------------------------------------------------------------------
+   Sem backend (Cloud Functions exigiriam o plano Blaze pra chamar a API do
+   Discord), então NÃO passamos pelo Firebase Auth nativo. O fluxo é:
+
+   1) startDiscordLogin() manda o navegador pro Discord.
+   2) O Discord devolve o usuário pro próprio site, com um access_token
+      direto no #fragmento da URL (nunca chega a ir pro servidor).
+   3) handleDiscordRedirect() (chamado no boot, em app.js) lê esse token,
+      busca os dados do usuário na API do Discord, cria uma sessão anônima
+      no Firebase Auth (signInAnonymously — permitido no plano Spark) só
+      pra ter um uid, e grava o perfil em users/{uid} do jeito de sempre.
+
+   Importante: client ID de OAuth2 não é segredo (é público por natureza,
+   diferente do client secret) — por isso pode ficar aqui no front-end.
+   O client SECRET nunca é usado nesse fluxo, porque o implicit grant não
+   precisa dele (é o próprio Discord quem exige isso pra flows sem backend).
+
+   Limitação: como não há backend pra validar identidade entre dispositivos,
+   isso vira uma sessão por navegador — a mesma pessoa logando pelo Discord
+   em outro aparelho ganha um perfil novo, sem ligação com o primeiro.
+   ========================================================================== */
+const DISCORD_CLIENT_ID = 'COLE_AQUI_O_CLIENT_ID_DO_DISCORD';
+const DISCORD_SCOPE = 'identify email';
+
 const Api = {
+
+  /* -------------------- login com Discord (OAuth2 manual) -------------------- */
+
+  // Chamado pelo clique no botão "Entrar com Discord" — redireciona a página.
+  startDiscordLogin(){
+    const redirectUri = location.origin + location.pathname;
+    const url = 'https://discord.com/oauth2/authorize'
+      + '?client_id=' + encodeURIComponent(DISCORD_CLIENT_ID)
+      + '&redirect_uri=' + encodeURIComponent(redirectUri)
+      + '&response_type=token'
+      + '&scope=' + encodeURIComponent(DISCORD_SCOPE);
+    location.href = url;
+  },
+
+  // Chamado uma vez no boot do app (init(), em app.js), ANTES de checar a
+  // sessão normal do Firebase. Retorna o usuário público se veio um token
+  // de volta do Discord na URL; retorna null se não tinha nada pra processar.
+  async handleDiscordRedirect(){
+    if (!location.hash || !location.hash.includes('access_token')) return null;
+
+    const params = new URLSearchParams(location.hash.slice(1));
+    const accessToken = params.get('access_token');
+    // Limpa o #fragmento da URL pra não deixar o token exposto no histórico
+    // do navegador nem processar de novo se a pessoa der F5.
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!accessToken) return null;
+
+    let discordUser;
+    try{
+      const res = await fetch('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!res.ok) throw new Error('status ' + res.status);
+      discordUser = await res.json();
+    }catch(err){
+      console.error('Erro ao buscar dados do usuário no Discord:', err);
+      Toast.show('Não foi possível entrar com o Discord. Tente novamente.', 'error', 'alertCircle');
+      return null;
+    }
+
+    if (!discordUser.email){
+      Toast.show('Não foi possível obter seu e-mail do Discord. Verifique se ele está confirmado na sua conta Discord e tente de novo.', 'error', 'alertCircle');
+      return null;
+    }
+
+    // Se já existe uma sessão (anônima ou não) nesse navegador, reaproveita.
+    // Só cria uma sessão anônima nova se realmente não tiver nenhuma.
+    let fbUser = window.fb.auth.currentUser;
+    if (!fbUser){
+      try{
+        const cred = await window.fb.signInAnonymously(window.fb.auth);
+        fbUser = cred.user;
+      }catch(err){
+        console.error('Erro ao criar sessão anônima:', err);
+        Toast.show('Não foi possível iniciar a sessão. Tente novamente.', 'error', 'alertCircle');
+        return null;
+      }
+    }
+
+    let profile = await DB.getUserById(fbUser.uid);
+    if (!profile){
+      const avatarUrl = discordUser.avatar
+        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+        : null;
+      const username = (discordUser.global_name || discordUser.username || 'Jogador').replace(/\s+/g, '').slice(0, 20);
+      const tag = String(Math.floor(1000 + Math.random() * 9000));
+      const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
+      const newProfile = {
+        username, usernameLower: username.toLowerCase(),
+        tag, email: discordUser.email, emailLower: discordUser.email.toLowerCase(),
+        avatar: avatarUrl || Utils.avatarDataUri(username, bg),
+        banner: bg,
+        bannerImage: null,
+        customStatus: '',
+        badges: ['founder'],
+        coins: 0,
+        activeFrame: null,
+        unlockedFrames: [],
+        authProvider: 'discord',
+        discordId: discordUser.id,
+        createdAt: new Date().toISOString()
+      };
+      profile = await DB.upsertUser(fbUser.uid, newProfile);
+    }
+    return this._publicUser(profile);
+  },
 
   /* -------------------- seed inicial (roda 1x só, globalmente) -------------------- */
   async seedIfNeeded(){
@@ -155,8 +267,9 @@ const Api = {
   async loginWithProvider(providerKey){
     const providerMap = {
       google: window.fb.googleProvider,
-      x: window.fb.twitterProvider,
-      discord: window.fb.discordProvider
+      x: window.fb.twitterProvider
+      // discord fica de fora: usa o fluxo manual (startDiscordLogin /
+      // handleDiscordRedirect), não o signInWithPopup do Firebase.
     };
     const provider = providerMap[providerKey];
     if (!provider) throw { message: 'Provedor de login não suportado.' };

@@ -149,7 +149,10 @@ async function init(){
 
   await Api.seedIfNeeded();
 
-  const current = await Api.onAuthReady();
+  // Se acabamos de voltar do redirect do Discord, isso resolve com o
+  // usuário já logado/criado. Senão, cai no fluxo normal de sessão.
+  let current = await Api.handleDiscordRedirect();
+  if (!current) current = await Api.onAuthReady();
   if (current){
     State.user = current;
     State.cart = await Api.getCart(cartOwnerKey());
@@ -271,6 +274,12 @@ function bindAuthEvents(){
     el.innerHTML = Icons.svg(el.dataset.socialIcon, 18);
   });
   $all('[data-social]').forEach(btn => btn.addEventListener('click', async () => {
+    // Discord não usa popup do Firebase — redireciona a página inteira pro
+    // Discord e volta com o token na URL (ver handleDiscordRedirect em init()).
+    if (btn.dataset.social === 'discord'){
+      Api.startDiscordLogin();
+      return;
+    }
     $('#authAlert').innerHTML = '';
     btn.disabled = true;
     try{

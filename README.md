@@ -88,6 +88,42 @@ os produtos em si) — só dado gerado pelo usuário foi para o banco.
    Firestore em modo produção nega todas as leituras/escritas por padrão —
    o app carrega, mas nada funciona.
 
+### Login com Discord (sem plano pago)
+
+O Firebase só tem provedores nativos para Google/Facebook/Twitter/etc. Um
+provedor "genérico" como o Discord exigiria cadastrá-lo como OIDC (**Add new
+provider → OpenID Connect**), mas esse recurso pertence ao Identity Platform
+e só é liberado no plano **Blaze** (pago por uso) — no Spark (gratuito) ele
+aparece com cadeado.
+
+Por isso o login com Discord deste projeto **não** passa pelo Firebase Auth
+nativo: é um OAuth2 "implicit grant" feito na mão, 100% client-side (sem
+Cloud Functions, sem Blaze). Ele usa `signInAnonymously` só para gerar um
+`uid` de sessão do Firebase Auth, onde o perfil do Discord é gravado — o
+resto do app (carrinho, pedidos, etc.) já funciona igual aos outros logins,
+porque tudo já é organizado por `uid`.
+
+**Configuração necessária:**
+
+1. Acesse [discord.com/developers/applications](https://discord.com/developers/applications)
+   e abra (ou crie) sua aplicação.
+2. Em **OAuth2 → General**, copie o **Client ID** e cole em
+   `DISCORD_CLIENT_ID`, no topo de `js/api.js`. (O **Client Secret** não é
+   usado neste fluxo — não precisa copiar.)
+3. Ainda em **OAuth2 → General → Redirects**, adicione a URL exata de onde o
+   site roda — ex.: `https://SEU-PROJECT-ID.web.app/`,
+   `https://SEU-PROJECT-ID.firebaseapp.com/` e, para testar localmente,
+   `http://localhost:8080/` (ajuste a porta se usar outra).
+
+**Limitação a ter em mente:** como não há backend para confirmar a
+identidade entre aparelhos, isso vira uma sessão por navegador — a mesma
+pessoa entrando pelo Discord no computador e depois no celular ganha dois
+perfis sem ligação entre si (carrinho, coins etc. não são compartilhados).
+Se isso virar um problema, a solução definitiva é migrar para Cloud
+Functions + Blaze (gera um `uid` estável via Custom Token, portátil entre
+dispositivos — o Blaze custa por uso, e o volume de um site assim
+dificilmente sairia da faixa gratuita mensal).
+
 ### Arquitetura da migração
 
 - `js/firebase-init.js` — único arquivo que importa o SDK do Firebase

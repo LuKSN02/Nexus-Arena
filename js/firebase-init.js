@@ -30,8 +30,8 @@ import {
   sendPasswordResetEmail,
   GoogleAuthProvider,
   TwitterAuthProvider,
-  OAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInAnonymously
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 import {
   getFirestore,
@@ -68,11 +68,14 @@ window.fb = {
   signInWithPopup,
   googleProvider: new GoogleAuthProvider(),
   twitterProvider: new TwitterAuthProvider(),
-  // Discord não é um provedor nativo do Firebase Auth — precisa ser cadastrado
-  // manualmente como provedor OIDC genérico em Authentication → Sign-in method
-  // → Add new provider → OpenID Connect, com o ID exatamente "oidc.discord"
-  // (client ID/secret gerados em https://discord.com/developers/applications).
-  discordProvider: new OAuthProvider('oidc.discord')
+  // Discord NÃO usa provedor nativo do Firebase (isso exigiria o Identity
+  // Platform / plano Blaze). Em vez disso, o login com Discord é feito
+  // "na mão" via OAuth2 implicit grant (ver DISCORD_LOGIN em js/api.js):
+  // o app manda o usuário pro Discord, recebe um access_token de volta
+  // direto na URL, busca os dados do usuário na API do Discord, e usa
+  // signInAnonymously só para ter um uid de sessão do Firebase Auth onde
+  // pendurar o perfil no Firestore — sem precisar de backend.
+  signInAnonymously
 };
 
 // Avisa o resto do app que o Firebase já está pronto para uso
