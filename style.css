@@ -947,7 +947,8 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 /* Nunca deixa o layout inteiro rolar na horizontal por causa de UM elemento
    largo demais (a causa mais comum de "tudo fora do lugar" no celular). */
 html, body{ overflow-x:hidden; max-width:100%; }
-img, svg, video, canvas{ max-width:100%; height:auto; }
+img, video, canvas{ max-width:100%; height:auto; }
+svg:not(.icon){ max-width:100%; height:auto; } /* ícones da UI (classe .icon, ver Icons.svg) ficam de fora — já têm tamanho fixo e proporção definida pelo viewBox; deixar "height:auto" pegar neles distorcia o desenho (ex.: ícone de "Responder" nos comentários) */
 
 @media (max-width:900px){
   .container{ padding:0 16px; }
