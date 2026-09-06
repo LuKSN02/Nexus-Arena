@@ -146,7 +146,12 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
   z-index:100;
 }
 .navbar__inner{ display:flex; align-items:center; gap:16px; width:100%; }
-.brand{ display:flex; align-items:center; gap:10px; flex:0 0 auto; background:none; border:none; padding:0; margin:0; font:inherit; cursor:pointer; text-align:left; color:inherit; }
+.brand{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+.navbar .brand{
+  background:none; border:none; font:inherit; cursor:pointer; text-align:left; color:inherit;
+  padding:6px 10px 6px 6px; margin:-6px -10px -6px -6px; border-radius:var(--radius-m);
+}
+.navbar .brand:hover{ background:var(--surface-2); }
 .brand__mark{ width:34px; height:34px; }
 .brand__name{ font-family:var(--f-display); font-size:19px; font-weight:700; letter-spacing:.03em; }
 .brand__name em{ font-style:normal; color:var(--signal); }
