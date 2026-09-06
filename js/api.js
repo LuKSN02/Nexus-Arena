@@ -785,6 +785,144 @@ const Api = {
     return found;
   },
 
+  /* ==========================================================================
+     CENTRAL DA COMUNIDADE
+     --------------------------------------------------------------------------
+     Posts de notícia OU vídeo enviados por qualquer usuário logado. Todo post
+     nasce com status 'pending' e só aparece no feed público depois que um
+     admin aprova (ver approveCommunityPost/rejectCommunityPost). A validação
+     "de verdade" (quem pode aprovar, quem pode editar o quê) está no
+     firestore.rules — o que está aqui é validação de formulário/UX, não
+     segurança.
+     ========================================================================== */
+
+  async getCommunityFeed(){
+    const list = await DB.getApprovedCommunityPosts();
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async getMyCommunityPosts(userId){
+    const list = await DB.getCommunityPostsByAuthor(userId);
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async getPendingCommunityPosts(){
+    const list = await DB.getPendingCommunityPosts();
+    return list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  },
+
+  async getArticleHighlights(articleId){
+    const list = await DB.getHighlightsByArticle(articleId);
+    return list.sort((a, b) => (this._score(b) - this._score(a)));
+  },
+
+  // Destaques agregados pra Central (todos os vídeos aprovados marcados
+  // como "Melhor Momento", tenham ou não notícia vinculada), ordenados
+  // pelos mais votados.
+  async getAggregatedHighlights(){
+    const all = await DB.getApprovedCommunityPosts();
+    return all
+      .filter(p => p.type === 'video' && p.isHighlight)
+      .sort((a, b) => this._score(b) - this._score(a))
+      .slice(0, 12);
+  },
+
+  _score(post){
+    return (post.upvotes ? post.upvotes.length : 0) - (post.downvotes ? post.downvotes.length : 0);
+  },
+
+  // Cria o post. Vídeos são sempre por link externo (YouTube/Twitch/Kick) —
+  // sem upload de arquivo, porque isso exigiria Firebase Storage, que no
+  // plano Spark (gratuito) agora fica atrás do plano Blaze.
+  async createCommunityPost(user, { type, title, body, game, videoUrl, relatedArticleId, isHighlight }){
+    title = (title || '').trim();
+    body = (body || '').trim();
+    if (!title) throw { field: 'title', message: 'Dê um título para o post.' };
+    if (title.length > 120) throw { field: 'title', message: 'Título muito longo (máx. 120 caracteres).' };
+    if (type !== 'news' && type !== 'video') throw { message: 'Tipo de post inválido.' };
+    if (type === 'news' && !body) throw { field: 'body', message: 'Escreva o conteúdo da notícia.' };
+    if (body.length > 5000) throw { field: 'body', message: 'Texto muito longo (máx. 5000 caracteres).' };
+
+    let finalVideoUrl = null;
+    if (type === 'video'){
+      videoUrl = (videoUrl || '').trim();
+      if (!/^https?:\/\/.+/i.test(videoUrl)) throw { field: 'video', message: 'Cole um link de vídeo válido (começando com http/https).' };
+      finalVideoUrl = videoUrl;
+    }
+
+    const post = {
+      type,
+      title,
+      body: type === 'news' ? body : (body || ''),
+      game: game || null,
+      videoSource: type === 'video' ? 'link' : null,
+      videoUrl: finalVideoUrl,
+      videoStoragePath: null,
+      relatedArticleId: relatedArticleId || null,
+      isHighlight: type === 'video' ? !!isHighlight : false,
+      authorId: user.id,
+      authorUsername: user.username,
+      authorAvatar: user.avatar,
+      status: 'pending',
+      rejectionReason: null,
+      upvotes: [],
+      downvotes: [],
+      createdAt: new Date().toISOString(),
+      approvedAt: null
+    };
+    return DB.createCommunityPost(post);
+  },
+
+  async approveCommunityPost(postId){
+    await DB.updateCommunityPost(postId, { status: 'approved', approvedAt: new Date().toISOString(), rejectionReason: null });
+  },
+
+  async rejectCommunityPost(postId, reason){
+    await DB.updateCommunityPost(postId, { status: 'rejected', rejectionReason: (reason || '').trim() || 'Não especificado.' });
+  },
+
+  async deleteCommunityPost(post){
+    await DB.deleteCommunityPost(post.id);
+  },
+
+  // direction: 'up' | 'down'. Chamar de novo com a mesma direção remove o
+  // voto (toggle); chamar com a direção oposta troca o voto.
+  async voteCommunityPost(postId, userId, direction){
+    const post = await DB.getCommunityPostById(postId);
+    if (!post) throw { message: 'Post não encontrado.' };
+    const upvoted = (post.upvotes || []).includes(userId);
+    const downvoted = (post.downvotes || []).includes(userId);
+
+    if (direction === 'up'){
+      await DB.toggleCommunityVote(postId, userId, upvoted ? null : 'up');
+    } else {
+      await DB.toggleCommunityVote(postId, userId, downvoted ? null : 'down');
+    }
+    return DB.getCommunityPostById(postId);
+  },
+
+  async getCommunityPostComments(postId){
+    const list = await DB.getCommentsByCommunityPost(postId);
+    return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async addCommunityPostComment(postId, user, text){
+    text = (text || '').trim();
+    if (!text) throw { message: 'Escreva algo antes de comentar.' };
+    if (text.length > 500) throw { message: 'Comentário muito longo (máx. 500 caracteres).' };
+    return DB.addComment({
+      communityPostId: postId,
+      articleId: null,
+      parentId: null,
+      userId: user.id,
+      username: user.username,
+      avatar: user.avatar,
+      text,
+      createdAt: new Date().toISOString(),
+      likes: []
+    });
+  },
+
   /* ============================== NOTIFICAÇÕES ============================== */
 
   async getNotifications(ownerKey){

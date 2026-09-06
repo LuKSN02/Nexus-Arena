@@ -1183,3 +1183,51 @@ img, svg, video, canvas{ max-width:100%; height:auto; }
   .bp-col, .bp-tile{ width:68px; }
   .bp-tile{ height:68px; }
 }
+
+/* ==========================================================================
+   CENTRAL DA COMUNIDADE
+   ========================================================================== */
+.community-header{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:24px; }
+
+.status-badge{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+.status-badge.pending{ background:var(--surface-3); color:var(--gold); border:1px solid rgba(255,185,61,.35); }
+.status-badge.approved{ background:var(--teal-dim); color:var(--teal); border:1px solid rgba(47,217,199,.35); }
+.status-badge.rejected{ background:var(--signal-dim); color:var(--signal); border:1px solid rgba(255,59,92,.35); }
+
+.highlight-strip{ display:flex; gap:14px; overflow-x:auto; padding-bottom:8px; margin-bottom:8px; }
+.highlight-card{ position:relative; flex:0 0 220px; height:124px; border-radius:var(--radius-m); overflow:hidden; border:1px solid var(--border); background:var(--surface-2); cursor:pointer; }
+.highlight-card img{ width:100%; height:100%; object-fit:cover; display:block; }
+.highlight-card__play{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(6,7,11,.25); color:#fff; }
+.highlight-card__title{ position:absolute; left:0; right:0; bottom:0; padding:8px 10px; font-size:12px; font-weight:700; color:#fff; background:linear-gradient(transparent, rgba(6,7,11,.9)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.community-feed{ display:flex; flex-direction:column; gap:14px; }
+.community-post-card{ display:flex; gap:14px; padding:16px; border:1px solid var(--border); border-radius:var(--radius-m); background:var(--surface); cursor:pointer; }
+.community-post-card:hover{ border-color:var(--text-faint); }
+.vote-col{ display:flex; flex-direction:column; align-items:center; gap:2px; flex:0 0 auto; }
+.vote-btn{ width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:var(--text-faint); }
+.vote-btn:hover{ background:var(--surface-2); color:var(--text); }
+.vote-btn.active-up{ color:var(--teal); }
+.vote-btn.active-down{ color:var(--signal); }
+.vote-score{ font-family:var(--f-mono); font-size:13px; font-weight:700; }
+.community-post-card__body{ flex:1 1 auto; min-width:0; }
+.community-post-card__head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.community-post-card__title{ font-size:15.5px; margin:4px 0 6px; }
+.community-post-card__excerpt{ font-size:12.5px; color:var(--text-faint); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.community-post-card__meta{ display:flex; align-items:center; gap:10px; margin-top:8px; font-size:11.5px; color:var(--text-faint); }
+
+.composer-type-switch{ display:flex; gap:8px; margin-bottom:16px; }
+.composer-type-switch button{ flex:1; padding:10px; border-radius:var(--radius-s); border:1px solid var(--border); background:var(--surface-2); color:var(--text-dim); font-weight:700; font-size:13px; }
+.composer-type-switch button.active{ border-color:var(--signal); color:var(--signal); background:var(--signal-dim); }
+
+.video-embed-wrap{ position:relative; width:100%; aspect-ratio:16/9; background:#000; border-radius:var(--radius-m); overflow:hidden; margin-bottom:16px; }
+.video-embed-wrap iframe, .video-embed-wrap video{ position:absolute; inset:0; width:100%; height:100%; border:0; }
+
+.upload-progress{ height:6px; border-radius:99px; background:var(--surface-3); overflow:hidden; margin-top:8px; }
+.upload-progress__bar{ height:100%; background:var(--teal); transition:width .2s ease; }
+
+.admin-queue{ display:flex; flex-direction:column; gap:10px; margin-bottom:28px; }
+.admin-queue-item{ display:flex; gap:12px; align-items:flex-start; padding:12px 14px; border:1px solid rgba(255,185,61,.3); border-radius:var(--radius-m); background:var(--surface-2); }
+.admin-queue-item__body{ flex:1; min-width:0; }
+.admin-queue-item__actions{ display:flex; gap:8px; flex:0 0 auto; }
+
+.community-empty{ text-align:center; padding:40px 16px; color:var(--text-faint); font-size:13.5px; }

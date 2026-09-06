@@ -24,6 +24,7 @@
      notifications/{id}        — campo ownerKey = uid
      newsletterSubs/{email}    — doc id = e-mail (URL-encoded)
      meta/seedStatus           — trava para o seed de conteúdo de demonstração rodar 1x só
+     communityPosts/{id}       — posts da Central da Comunidade (notícia/vídeo enviados por usuários)
    ========================================================================== */
 
 const DB = {
@@ -69,6 +70,13 @@ const DB = {
   // ---- comentários ----
   async getCommentsByArticle(articleId){
     const q = window.fb.query(this._col('comments'), window.fb.where('articleId', '==', articleId));
+    const snap = await window.fb.getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  // Comentários de um post da Central da Comunidade — mesma coleção
+  // "comments", só que filtrando por communityPostId em vez de articleId.
+  async getCommentsByCommunityPost(postId){
+    const q = window.fb.query(this._col('comments'), window.fb.where('communityPostId', '==', postId));
     const snap = await window.fb.getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
@@ -249,5 +257,71 @@ const DB = {
       console.error('[discord-login debug] escrita em meta/seedStatus falhou:', err.code || err.name, err.message);
       throw err;
     }
+  },
+
+  /* ==========================================================================
+     CENTRAL DA COMUNIDADE — posts (notícia/vídeo) enviados por usuários,
+     com fila de aprovação, votos e (opcional) vínculo com uma notícia
+     existente para aparecer como "Melhor Momento" daquele artigo.
+     ========================================================================== */
+
+  async createCommunityPost(post){
+    const ref = await window.fb.addDoc(this._col('communityPosts'), post);
+    return { id: ref.id, ...post };
+  },
+
+  // Feed público: só posts aprovados, mais recentes primeiro.
+  async getApprovedCommunityPosts(){
+    const q = window.fb.query(this._col('communityPosts'), window.fb.where('status', '==', 'approved'));
+    const snap = await window.fb.getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  // Posts do próprio usuário (qualquer status), pra aba "Meus posts".
+  async getCommunityPostsByAuthor(uid){
+    const q = window.fb.query(this._col('communityPosts'), window.fb.where('authorId', '==', uid));
+    const snap = await window.fb.getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  // Fila de moderação (admin) — só os pendentes.
+  async getPendingCommunityPosts(){
+    const q = window.fb.query(this._col('communityPosts'), window.fb.where('status', '==', 'pending'));
+    const snap = await window.fb.getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  // Vídeos aprovados marcados como "Melhor Momento" de um artigo específico.
+  async getHighlightsByArticle(articleId){
+    const q = window.fb.query(
+      this._col('communityPosts'),
+      window.fb.where('status', '==', 'approved'),
+      window.fb.where('isHighlight', '==', true),
+      window.fb.where('relatedArticleId', '==', articleId)
+    );
+    const snap = await window.fb.getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+
+  async getCommunityPostById(id){
+    const snap = await window.fb.getDoc(this._doc('communityPosts', id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  },
+
+  async updateCommunityPost(id, patch){
+    await window.fb.updateDoc(this._doc('communityPosts', id), patch);
+  },
+
+  async deleteCommunityPost(id){
+    await window.fb.deleteDoc(this._doc('communityPosts', id));
+  },
+
+  async toggleCommunityVote(id, uid, direction){
+    // direction: 'up' | 'down' | null (null = remover voto atual)
+    const patch = {
+      upvotes: direction === 'up' ? window.fb.arrayUnion(uid) : window.fb.arrayRemove(uid),
+      downvotes: direction === 'down' ? window.fb.arrayUnion(uid) : window.fb.arrayRemove(uid)
+    };
+    await window.fb.updateDoc(this._doc('communityPosts', id), patch);
   }
 };

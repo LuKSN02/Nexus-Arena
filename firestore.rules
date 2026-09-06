@@ -97,5 +97,36 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update, delete: if false;
     }
+
+    // Central da Comunidade: posts de notícia/vídeo enviados por usuários.
+    // Leitura pública (o app filtra por status=='approved' na query pro
+    // feed público, e por authorId==uid pra aba "Meus posts"/pendentes —
+    // sem isso a query nem completa, mas a regra em si não restringe
+    // leitura porque não há nada sensível no documento).
+    // Criação: só o próprio autor, e sempre nasce como 'pending' (a
+    // aprovação/rejeição é feita só depois, via update).
+    // Update: o autor só pode editar enquanto ainda 'pending' (sem trocar
+    // o status nem o authorId); votos (upvotes/downvotes) qualquer
+    // logado pode mexer, desde que só esses dois campos mudem; e só o(s)
+    // e-mail(s) admin pode aprovar/rejeitar mudando o status.
+    match /communityPosts/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update: if request.auth != null && (
+        (resource.data.authorId == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.authorId == request.auth.uid) ||
+        request.auth.token.email == 'trajano.neves01@gmail.com' ||
+        (request.auth.uid != resource.data.authorId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes', 'downvotes']))
+      );
+      allow delete: if request.auth != null && (
+        resource.data.authorId == request.auth.uid ||
+        request.auth.token.email == 'trajano.neves01@gmail.com'
+      );
+    }
   }
 }

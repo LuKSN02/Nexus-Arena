@@ -32,13 +32,16 @@ const State = {
   lastOrder: null,
   articles: [],
   products: [],
+  communityFeed: [],
+  communityFilter: 'all',
   lastFocused: null,
   activeTrap: null
 };
 
 const NAV_ITEMS = [
   { view: 'home', icon: 'newspaper', label: 'Notícias' },
-  { view: 'shop', icon: 'box', label: 'Loja' }
+  { view: 'shop', icon: 'box', label: 'Loja' },
+  { view: 'community', icon: 'users', label: 'Comunidade' }
 ];
 
 const PAGE_SIZE_ARTICLES = 6;
@@ -661,6 +664,7 @@ function navigateTo(view){
   if (view === 'home') renderHomeView();
   else if (view === 'shop') renderShopView();
   else if (view === 'checkout') renderCheckoutView();
+  else if (view === 'community') renderCommunityView();
   window.scrollTo(0, 0);
 }
 
@@ -887,6 +891,7 @@ async function openArticleModal(id){
   const article = await Api.getArticle(id);
   const comments = await Api.getComments(id);
   const likeIds = await DB.getArticleLikeIds(id);
+  const highlights = await Api.getArticleHighlights(id);
   const liked = State.user ? likeIds.includes(State.user.id) : false;
   const bookmarked = State.bookmarks.includes(id);
   const related = NEWS.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
@@ -907,6 +912,14 @@ async function openArticleModal(id){
         <button class="reaction-btn" id="articleShareBtn">${Icons.svg('share', 15)}Compartilhar</button>
         <button class="reaction-btn ${bookmarked ? 'liked' : ''}" id="articleBookmarkBtn" aria-pressed="${bookmarked}">${Icons.svg('bookmark', 15)}${bookmarked ? 'Salvo' : 'Salvar'}</button>
       </div>
+
+      ${highlights.length ? `
+      <div class="related-section">
+        <h3 style="font-size:14px;margin-bottom:12px;">${Icons.svg('flame', 15)} Melhores momentos</h3>
+        <div class="highlight-strip">
+          ${highlights.map(h => communityHighlightCardHtml(h)).join('')}
+        </div>
+      </div>` : ''}
 
       ${related.length ? `
       <div class="related-section">
@@ -1062,6 +1075,405 @@ async function openArticleModal(id){
       Toast.show('Comentário removido.', 'info', 'trash');
     }));
   }
+}
+
+/* ============================================================================
+   CENTRAL DA COMUNIDADE
+   ========================================================================== */
+
+// Extrai um ID de vídeo do YouTube de qualquer formato comum de link.
+function youtubeId(url){
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+// Detecta um clipe/VOD do Twitch (channel/clip/videos) — o embed exige o
+// parâmetro "parent" com o hostname exato de onde a página está rodando.
+function twitchEmbedSrc(url){
+  const clipMatch = url.match(/clips\.twitch\.tv\/([\w-]+)|twitch\.tv\/\w+\/clip\/([\w-]+)/);
+  const vodMatch = url.match(/twitch\.tv\/videos\/(\d+)/);
+  const parent = location.hostname;
+  if (clipMatch) return `https://clips.twitch.tv/embed?clip=${clipMatch[1] || clipMatch[2]}&parent=${parent}`;
+  if (vodMatch) return `https://player.twitch.tv/?video=${vodMatch[1]}&parent=${parent}&autoplay=false`;
+  return null;
+}
+
+// Gera o embed do vídeo (upload no Storage OU link externo). Quando o link
+// não é de um provedor reconhecido, cai num botão "assistir no site
+// original" em vez de tentar embutir uma página qualquer num iframe.
+function videoEmbedHtml(post){
+  const yt = youtubeId(post.videoUrl || '');
+  if (yt) return `<div class="video-embed-wrap"><iframe src="https://www.youtube-nocookie.com/embed/${yt}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+  const tw = twitchEmbedSrc(post.videoUrl || '');
+  if (tw) return `<div class="video-embed-wrap"><iframe src="${tw}" allowfullscreen></iframe></div>`;
+  return `<a class="btn btn-ghost" href="${post.videoUrl}" target="_blank" rel="noopener noreferrer">${Icons.svg('externalLink', 15)} Assistir no site original</a>`;
+}
+
+// Card pequeno usado na tira de "Melhores momentos" (dentro da notícia e
+// na Central). Sem thumbnail real pra upload/Twitch (exigiria gerar a
+// imagem no servidor) — usa a capa do YouTube quando disponível.
+function communityHighlightCardHtml(post){
+  const yt = post.videoSource === 'link' ? youtubeId(post.videoUrl || '') : null;
+  const thumb = yt ? `https://img.youtube.com/vi/${yt}/hqdefault.jpg` : null;
+  return `
+    <button type="button" class="highlight-card" data-open-community-post="${post.id}">
+      ${thumb
+        ? `<img src="${thumb}" alt="" loading="lazy"><span class="highlight-card__play">${Icons.svg('play', 22)}</span>`
+        : `<div class="highlight-card__play" style="position:static;height:100%;background:var(--surface-3);">${Icons.svg('play', 28)}</div>`}
+      <span class="highlight-card__title">${Utils.escapeHtml(post.title)}</span>
+    </button>`;
+}
+
+function communityPostCardHtml(post){
+  const score = Api._score(post);
+  const myVote = State.user
+    ? (post.upvotes.includes(State.user.id) ? 'up' : post.downvotes.includes(State.user.id) ? 'down' : null)
+    : null;
+  const excerpt = post.type === 'news' ? post.body : (post.body || 'Confira o vídeo enviado por um jogador da comunidade.');
+  return `
+    <div class="community-post-card" data-open-community-post="${post.id}">
+      <div class="vote-col">
+        <button type="button" class="vote-btn ${myVote === 'up' ? 'active-up' : ''}" data-community-vote="up" data-post-id="${post.id}" aria-label="Votar a favor">${Icons.svg('arrowUp', 18)}</button>
+        <span class="vote-score">${score}</span>
+        <button type="button" class="vote-btn ${myVote === 'down' ? 'active-down' : ''}" data-community-vote="down" data-post-id="${post.id}" aria-label="Votar contra">${Icons.svg('arrowDown', 18)}</button>
+      </div>
+      <div class="community-post-card__body">
+        <div class="community-post-card__head">
+          <span class="chip">${post.type === 'video' ? Icons.svg('play', 12) + ' Vídeo' : Icons.svg('newspaper', 12) + ' Notícia'}</span>
+          ${post.isHighlight ? `<span class="chip">${Icons.svg('flame', 12)} Melhor momento</span>` : ''}
+          ${post.game ? `<span class="chip">${Utils.escapeHtml(post.game)}</span>` : ''}
+        </div>
+        <h4 class="community-post-card__title">${Utils.escapeHtml(post.title)}</h4>
+        <p class="community-post-card__excerpt">${Utils.escapeHtml(excerpt)}</p>
+        <div class="community-post-card__meta">
+          <span>${Icons.svg('user', 12)} ${Utils.escapeHtml(post.authorUsername)}</span>
+          <span>${Icons.svg('clock', 12)} ${Utils.timeAgo(post.createdAt)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function renderCommunityView(){
+  const main = $('#mainContent');
+  const isAdmin = State.user && ADMIN_EMAILS.includes((State.user.email || '').toLowerCase());
+
+  main.innerHTML = `
+    <div class="page container">
+      <div class="community-header">
+        <div>
+          <span class="section-eyebrow">FEED DA GALERA</span>
+          <h2>${Icons.svg('users', 20)}Central da Comunidade</h2>
+        </div>
+        <button type="button" class="btn btn-primary" id="openComposerBtn">${Icons.svg('plus', 15)} Postar</button>
+      </div>
+
+      <div id="adminQueueBox"></div>
+
+      <div class="section-head">
+        <div><h3 style="font-size:15px;">${Icons.svg('flame', 16)}Melhores momentos</h3></div>
+      </div>
+      <div class="highlight-strip" id="highlightStrip"></div>
+
+      <div class="section-head" style="margin-top:8px;">
+        <div><h3 style="font-size:15px;">Feed</h3></div>
+        <div class="chip-row" id="communityFilterChips">
+          <button type="button" class="chip active" data-cfilter="all">Tudo</button>
+          <button type="button" class="chip" data-cfilter="news">Notícias</button>
+          <button type="button" class="chip" data-cfilter="video">Vídeos</button>
+        </div>
+      </div>
+      <div class="community-feed" id="communityFeed"></div>
+    </div>
+  `;
+
+  if (isAdmin){
+    const pending = await Api.getPendingCommunityPosts();
+    const box = $('#adminQueueBox');
+    if (pending.length){
+      box.innerHTML = `
+        <div class="admin-queue">
+          <h3 style="font-size:13px;color:var(--gold);">${Icons.svg('shield', 14)} Aprovações pendentes (${pending.length})</h3>
+          ${pending.map(p => `
+            <div class="admin-queue-item">
+              <div class="admin-queue-item__body">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+                  <span class="chip">${p.type === 'video' ? 'Vídeo' : 'Notícia'}</span>
+                  <strong style="font-size:13.5px;">${Utils.escapeHtml(p.title)}</strong>
+                </div>
+                <p style="font-size:12px;color:var(--text-faint);">por ${Utils.escapeHtml(p.authorUsername)} · ${Utils.timeAgo(p.createdAt)}</p>
+              </div>
+              <div class="admin-queue-item__actions">
+                <button type="button" class="btn btn-ghost btn-sm" data-review-post="${p.id}">Ver</button>
+                <button type="button" class="btn btn-primary btn-sm" data-approve-post="${p.id}">Aprovar</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-reject-post="${p.id}">Rejeitar</button>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }
+  }
+
+  const highlights = await Api.getAggregatedHighlights();
+  $('#highlightStrip').innerHTML = highlights.length
+    ? highlights.map(h => communityHighlightCardHtml(h)).join('')
+    : `<p class="community-empty" style="padding:12px 0;">Nenhum melhor momento em destaque ainda.</p>`;
+
+  const feed = await Api.getCommunityFeed();
+  State.communityFeed = feed;
+  State.communityFilter = 'all';
+  renderCommunityFeedList();
+
+  $('#openComposerBtn').addEventListener('click', () => openCommunityComposerModal());
+
+  $all('#communityFilterChips .chip').forEach(chip => chip.addEventListener('click', () => {
+    $all('#communityFilterChips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    State.communityFilter = chip.dataset.cfilter;
+    renderCommunityFeedList();
+  }));
+
+  $all('[data-approve-post]').forEach(b => b.addEventListener('click', async () => {
+    await Api.approveCommunityPost(b.dataset.approvePost);
+    Toast.show('Post aprovado.', 'success', 'checkCircle');
+    renderCommunityView();
+  }));
+  $all('[data-reject-post]').forEach(b => b.addEventListener('click', async () => {
+    const reason = window.prompt('Motivo da rejeição (o autor vai ver esse texto):', '');
+    if (reason === null) return;
+    await Api.rejectCommunityPost(b.dataset.rejectPost, reason);
+    Toast.show('Post rejeitado.', 'info');
+    renderCommunityView();
+  }));
+  $all('[data-review-post]').forEach(b => b.addEventListener('click', () => openCommunityPostModal(b.dataset.reviewPost)));
+}
+
+function renderCommunityFeedList(){
+  const box = $('#communityFeed');
+  const filter = State.communityFilter || 'all';
+  const list = (State.communityFeed || []).filter(p => filter === 'all' || p.type === filter);
+  box.innerHTML = list.length
+    ? list.map(communityPostCardHtml).join('')
+    : `<p class="community-empty">Nenhum post por aqui ainda — que tal ser o primeiro a postar?</p>`;
+}
+
+async function openCommunityComposerModal(){
+  if (!State.user) return Toast.show('Entre na sua conta para postar.', 'warn');
+
+  const articleOptions = NEWS.map(n => `<option value="${n.id}">${Utils.escapeHtml(n.title)}</option>`).join('');
+
+  openModal('lg', `
+    <div class="composer-type-switch" id="composerTypeSwitch">
+      <button type="button" class="active" data-ctype="news">${Icons.svg('newspaper', 15)} Notícia</button>
+      <button type="button" data-ctype="video">${Icons.svg('play', 15)} Vídeo</button>
+    </div>
+
+    <div class="field">
+      <label>Título</label>
+      <div class="field-input"><input id="cpTitle" maxlength="120" placeholder="Dê um título chamativo"></div>
+    </div>
+
+    <div class="field" id="cpBodyField">
+      <label>Conteúdo</label>
+      <div class="field-input" style="height:auto;"><textarea id="cpBody" rows="6" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;resize:vertical;padding:10px;" maxlength="5000" placeholder="Escreva a notícia..."></textarea></div>
+    </div>
+
+    <div id="cpVideoFields" class="hidden">
+      <div class="field" id="cpVideoLinkField">
+        <label>Link do vídeo (YouTube, Twitch, Kick...)</label>
+        <div class="field-input"><input id="cpVideoUrl" placeholder="https://..."></div>
+      </div>
+      <div class="field">
+        <label>Descrição (opcional)</label>
+        <div class="field-input" style="height:auto;"><textarea id="cpVideoDesc" rows="3" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;resize:vertical;padding:10px;" maxlength="5000" placeholder="Conte um pouco sobre o clipe..."></textarea></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:14px;">
+        <input type="checkbox" id="cpIsHighlight"> Marcar como "Melhor momento" (aparece em destaque na Central)
+      </label>
+      <div class="field">
+        <label>Vincular a uma notícia existente (opcional)</label>
+        <div class="field-input"><select id="cpRelatedArticle" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;padding:0 10px;">
+          <option value="">Nenhuma</option>
+          ${articleOptions}
+        </select></div>
+      </div>
+    </div>
+
+    <button type="button" class="btn btn-primary" id="cpSubmit" style="width:100%;margin-top:8px;">Enviar para aprovação</button>
+    <p style="font-size:11.5px;color:var(--text-faint);margin-top:10px;">Seu post fica pendente até um admin aprovar — você pode acompanhar o status na própria Central.</p>
+  `, 'Novo post');
+
+  let currentType = 'news';
+
+  $all('#composerTypeSwitch button').forEach(btn => btn.addEventListener('click', () => {
+    $all('#composerTypeSwitch button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentType = btn.dataset.ctype;
+    $('#cpBodyField').classList.toggle('hidden', currentType === 'video');
+    $('#cpVideoFields').classList.toggle('hidden', currentType !== 'video');
+  }));
+
+  $('#cpSubmit').addEventListener('click', async () => {
+    const btn = $('#cpSubmit');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    try{
+      await Api.createCommunityPost(State.user, {
+        type: currentType,
+        title: $('#cpTitle').value,
+        body: currentType === 'news' ? $('#cpBody').value : $('#cpVideoDesc').value,
+        game: null,
+        videoSource: currentType === 'video' ? 'link' : null,
+        videoUrl: currentType === 'video' ? $('#cpVideoUrl').value : null,
+        relatedArticleId: currentType === 'video' ? $('#cpRelatedArticle').value : null,
+        isHighlight: currentType === 'video' ? $('#cpIsHighlight').checked : false
+      });
+      Toast.show('Post enviado! Aguarde a aprovação de um admin.', 'success', 'checkCircle');
+      closeModal();
+      if (State.view === 'community') renderCommunityView();
+    }catch(err){
+      Toast.show(err.message || 'Não foi possível criar o post.', 'error');
+    }finally{
+      btn.disabled = false; btn.textContent = 'Enviar para aprovação';
+    }
+  });
+}
+
+async function openCommunityPostModal(id){
+  const post = await DB.getCommunityPostById(id);
+  if (!post) return Toast.show('Post não encontrado.', 'error');
+  const comments = await Api.getCommunityPostComments(id);
+  const isAdmin = State.user && ADMIN_EMAILS.includes((State.user.email || '').toLowerCase());
+  const score = Api._score(post);
+  const myVote = State.user
+    ? (post.upvotes.includes(State.user.id) ? 'up' : post.downvotes.includes(State.user.id) ? 'down' : null)
+    : null;
+
+  openModal('lg', `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+      <span class="chip">${post.type === 'video' ? Icons.svg('play', 12) + ' Vídeo' : Icons.svg('newspaper', 12) + ' Notícia'}</span>
+      ${post.isHighlight ? `<span class="chip">${Icons.svg('flame', 12)} Melhor momento</span>` : ''}
+      <span class="status-badge ${post.status}">${post.status === 'approved' ? 'Aprovado' : post.status === 'pending' ? 'Pendente' : 'Rejeitado'}</span>
+    </div>
+    <h2 style="margin-bottom:10px;">${Utils.escapeHtml(post.title)}</h2>
+    <div class="article-meta-row" style="margin-bottom:16px;">
+      <span>${Icons.svg('user', 13)} ${Utils.escapeHtml(post.authorUsername)}</span>
+      <span>${Icons.svg('clock', 13)} ${Utils.timeAgo(post.createdAt)}</span>
+    </div>
+
+    ${post.type === 'video' ? videoEmbedHtml(post) : ''}
+    ${post.body ? `<div class="article-content"><p>${Utils.escapeHtml(post.body)}</p></div>` : ''}
+    ${post.status === 'rejected' && post.rejectionReason ? `<p style="color:var(--signal);font-size:12.5px;margin-bottom:16px;">Motivo da rejeição: ${Utils.escapeHtml(post.rejectionReason)}</p>` : ''}
+
+    <div class="article-actions">
+      <button class="reaction-btn ${myVote === 'up' ? 'liked' : ''}" id="cpUpvoteBtn">${Icons.svg('arrowUp', 15)} <span id="cpScore">${score}</span></button>
+      <button class="reaction-btn ${myVote === 'down' ? 'liked' : ''}" id="cpDownvoteBtn">${Icons.svg('arrowDown', 15)}</button>
+      ${isAdmin && post.status === 'pending' ? `
+        <button class="reaction-btn" id="cpApproveBtn">${Icons.svg('checkCircle', 15)} Aprovar</button>
+        <button class="reaction-btn" id="cpRejectBtn">${Icons.svg('close', 15)} Rejeitar</button>` : ''}
+      ${State.user && (State.user.id === post.authorId || isAdmin) ? `<button class="reaction-btn" id="cpDeleteBtn">${Icons.svg('trash', 15)} Excluir</button>` : ''}
+    </div>
+
+    <div class="comments">
+      <h3>${Icons.svg('comment', 16)}Comentários (<span id="cpCommentCount">${comments.length}</span>)</h3>
+      ${State.user ? `
+        <div class="comment-form">
+          <textarea id="cpCommentInput" placeholder="Escreva um comentário..." maxlength="500"></textarea>
+          <button class="btn btn-primary" id="cpCommentSubmit" style="align-self:flex-end;">Comentar</button>
+        </div>` : `<p style="margin-bottom:16px;">Entre na sua conta para comentar.</p>`}
+      <div class="comment-list" id="cpCommentList"></div>
+    </div>
+  `, post.type === 'video' ? 'Vídeo da comunidade' : 'Notícia da comunidade');
+
+  const renderCpComments = (list) => {
+    const box = $('#cpCommentList');
+    if (!list.length){
+      box.innerHTML = `<p style="color:var(--text-faint);">Seja o primeiro a comentar.</p>`;
+      return;
+    }
+    box.innerHTML = list.map(c => {
+      const likedByMe = State.user && c.likes.includes(State.user.id);
+      const mine = State.user && c.userId === State.user.id;
+      return `
+      <div class="comment" data-comment-id="${c.id}">
+        <img class="avatar" src="${c.avatar}" width="34" height="34" alt="" loading="lazy" decoding="async">
+        <div class="comment__body">
+          <div class="comment__head">
+            <span class="comment__name">${Utils.escapeHtml(c.username)}</span>
+            <span class="comment__time">${Utils.timeAgo(c.createdAt)}</span>
+          </div>
+          <p class="comment__text">${Utils.escapeHtml(c.text)}</p>
+          <div class="comment__actions">
+            <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${c.likes.length}</button>
+            ${mine ? `<button data-delete-comment="${c.id}">${Icons.svg('trash', 13)} Remover</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    $all('[data-like-comment]').forEach(b => b.addEventListener('click', async () => {
+      if (!State.user) return Toast.show('Entre na sua conta para curtir.', 'warn');
+      await Api.toggleCommentLike(b.dataset.likeComment, State.user.id);
+      renderCpComments(await Api.getCommunityPostComments(id));
+    }));
+    $all('[data-delete-comment]').forEach(b => b.addEventListener('click', async () => {
+      await Api.deleteComment(b.dataset.deleteComment, State.user.id);
+      const fresh = await Api.getCommunityPostComments(id);
+      renderCpComments(fresh);
+      $('#cpCommentCount').textContent = fresh.length;
+    }));
+  };
+  renderCpComments(comments);
+
+  const doVote = async (direction) => {
+    if (!State.user) return Toast.show('Entre na sua conta para votar.', 'warn');
+    const updated = await Api.voteCommunityPost(id, State.user.id, direction);
+    $('#cpScore').textContent = Api._score(updated);
+    $('#cpUpvoteBtn').classList.toggle('liked', updated.upvotes.includes(State.user.id));
+    $('#cpDownvoteBtn').classList.toggle('liked', updated.downvotes.includes(State.user.id));
+  };
+  $('#cpUpvoteBtn').addEventListener('click', () => doVote('up'));
+  $('#cpDownvoteBtn').addEventListener('click', () => doVote('down'));
+
+  const approveBtn = $('#cpApproveBtn');
+  if (approveBtn) approveBtn.addEventListener('click', async () => {
+    await Api.approveCommunityPost(id);
+    Toast.show('Post aprovado.', 'success', 'checkCircle');
+    closeModal();
+    if (State.view === 'community') renderCommunityView();
+  });
+  const rejectBtn = $('#cpRejectBtn');
+  if (rejectBtn) rejectBtn.addEventListener('click', async () => {
+    const reason = window.prompt('Motivo da rejeição (o autor vai ver esse texto):', '');
+    if (reason === null) return;
+    await Api.rejectCommunityPost(id, reason);
+    Toast.show('Post rejeitado.', 'info');
+    closeModal();
+    if (State.view === 'community') renderCommunityView();
+  });
+  const deleteBtn = $('#cpDeleteBtn');
+  if (deleteBtn) deleteBtn.addEventListener('click', async () => {
+    if (!window.confirm('Excluir este post definitivamente?')) return;
+    await Api.deleteCommunityPost(post);
+    Toast.show('Post excluído.', 'info', 'trash');
+    closeModal();
+    if (State.view === 'community') renderCommunityView();
+  });
+
+  const commentSubmitBtn = $('#cpCommentSubmit');
+  if (commentSubmitBtn) commentSubmitBtn.addEventListener('click', async () => {
+    const text = $('#cpCommentInput').value;
+    commentSubmitBtn.disabled = true;
+    try{
+      await Api.addCommunityPostComment(id, State.user, text);
+      $('#cpCommentInput').value = '';
+      const fresh = await Api.getCommunityPostComments(id);
+      renderCpComments(fresh);
+      $('#cpCommentCount').textContent = fresh.length;
+      Toast.show('Comentário publicado.', 'success');
+    }catch(err){
+      Toast.show(err.message || 'Não foi possível comentar.', 'error');
+    }finally{
+      commentSubmitBtn.disabled = false;
+    }
+  });
 }
 
 /* ============================================================================
@@ -2947,6 +3359,26 @@ function bindGlobalDelegatedEvents(){
 
     const openArt = e.target.closest('[data-open-article]');
     if (openArt){ openArticleModal(openArt.dataset.openArticle); return; }
+
+    const voteBtn = e.target.closest('[data-community-vote]');
+    if (voteBtn){
+      e.stopPropagation();
+      if (!State.user){ Toast.show('Entre na sua conta para votar.', 'warn'); return; }
+      Api.voteCommunityPost(voteBtn.dataset.postId, State.user.id, voteBtn.dataset.communityVote).then(updated => {
+        const card = voteBtn.closest('.community-post-card');
+        if (!card) return;
+        card.querySelector('.vote-score').textContent = Api._score(updated);
+        card.querySelectorAll('[data-community-vote]').forEach(b => {
+          b.classList.remove('active-up', 'active-down');
+        });
+        if (updated.upvotes.includes(State.user.id)) card.querySelector('[data-community-vote="up"]').classList.add('active-up');
+        if (updated.downvotes.includes(State.user.id)) card.querySelector('[data-community-vote="down"]').classList.add('active-down');
+      });
+      return;
+    }
+
+    const openPost = e.target.closest('[data-open-community-post]');
+    if (openPost){ openCommunityPostModal(openPost.dataset.openCommunityPost); return; }
 
     const catChip = e.target.closest('#categoryChips [data-cat]');
     if (catChip){
