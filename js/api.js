@@ -6,9 +6,15 @@
    Firebase Authentication; tudo o que era "tabela" no localStorage vira
    coleção no Firestore (veja o cabeçalho de db.js).
 
-   Conteúdo de catálogo (NEWS e PRODUCTS, em data.js) continua estático —
-   só dado gerado pelo usuário (conta, comentários, avaliações, pedidos,
-   carrinho, lista de desejos, notificações) foi para o Firestore.
+   Conteúdo de catálogo (PRODUCTS, em data.js) continua estático — só dado
+   gerado pelo usuário (conta, comentários, avaliações, pedidos, carrinho,
+   lista de desejos, notificações) foi para o Firestore.
+
+   NEWS (data.js) é o conteúdo de demonstração e continua estático, mas
+   getNews()/getArticle() agora mesclam com notícias reais cadastradas pelo
+   admin no Firestore (coleção "articles", ver js/db.js) — são as que
+   aparecem com botões de editar/remover no painel ADMIN. As notícias
+   estáticas de data.js não são editáveis por ali (ficam só no código).
    ========================================================================== */
 
 /* ==========================================================================
@@ -556,11 +562,58 @@ const Api = {
   /* ============================== NOTÍCIAS ============================== */
 
   async getNews(category){
-    const list = NEWS.filter(n => !category || category === 'todos' || n.category === category);
+    const custom = await DB.getArticles();
+    const merged = [
+      ...custom.map(a => ({ ...a, isCustom: true })),
+      ...NEWS.map(n => ({ ...n, isCustom: false }))
+    ].sort((a, b) => (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0));
+    const list = merged.filter(n => !category || category === 'todos' || n.category === category);
     return Promise.all(list.map(async n => {
       const likeIds = await DB.getArticleLikeIds(n.id);
-      return { ...n, likeCount: n.likes + likeIds.length };
+      return { ...n, likeCount: (n.likes || 0) + likeIds.length };
     }));
+  },
+
+  /* -------------------- notícias reais (admin) -------------------- */
+  async createArticle({ category, title, excerpt, content, author, readTime, coverImage }){
+    if (!title || !title.trim()) throw { message: 'Dê um título para a notícia.' };
+    if (!excerpt || !excerpt.trim()) throw { message: 'Escreva um resumo curto.' };
+    if (!content || !content.length) throw { message: 'Escreva o conteúdo da notícia.' };
+    const wordCount = content.join(' ').trim().split(/\s+/).length;
+    const payload = {
+      category: category || 'geral',
+      title: title.trim(),
+      excerpt: excerpt.trim(),
+      content,
+      author: (author || '').trim() || 'Redação Nexus',
+      readTime: readTime || Math.max(1, Math.round(wordCount / 200)),
+      coverImage: coverImage ? coverImage.trim() : null,
+      likes: 0,
+      comments: 0,
+      createdAt: new Date().toISOString()
+    };
+    return DB.createArticle(payload);
+  },
+  async updateArticle(id, { category, title, excerpt, content, author, readTime, coverImage }){
+    if (!title || !title.trim()) throw { message: 'Dê um título para a notícia.' };
+    if (!excerpt || !excerpt.trim()) throw { message: 'Escreva um resumo curto.' };
+    if (!content || !content.length) throw { message: 'Escreva o conteúdo da notícia.' };
+    await DB.updateArticle(id, {
+      category: category || 'geral',
+      title: title.trim(),
+      excerpt: excerpt.trim(),
+      content,
+      author: (author || '').trim() || 'Redação Nexus',
+      readTime: readTime || Math.max(1, Math.round(content.join(' ').trim().split(/\s+/).length / 200)),
+      coverImage: coverImage ? coverImage.trim() : null
+    });
+  },
+  async deleteArticle(id){
+    await DB.deleteArticle(id);
+  },
+  async getCustomArticles(){
+    const list = await DB.getArticles();
+    return list.sort((a, b) => (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0));
   },
 
   async subscribeNewsletter(email){
@@ -573,10 +626,15 @@ const Api = {
   },
 
   async getArticle(id){
-    const art = NEWS.find(n => n.id === id);
+    let art = NEWS.find(n => n.id === id);
+    let isCustom = false;
+    if (!art){
+      art = await DB.getArticleById(id);
+      isCustom = true;
+    }
     if (!art) throw { message: 'Notícia não encontrada.' };
     const likeIds = await DB.getArticleLikeIds(id);
-    return { ...art, likeCount: art.likes + likeIds.length };
+    return { ...art, isCustom, likeCount: (art.likes || 0) + likeIds.length };
   },
 
   async toggleArticleLike(articleId, userId){

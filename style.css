@@ -947,9 +947,21 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 /* Nunca deixa o layout inteiro rolar na horizontal por causa de UM elemento
    largo demais (a causa mais comum de "tudo fora do lugar" no celular). */
 html, body{ overflow-x:hidden; max-width:100%; }
-img:not(.avatar), video, canvas{ max-width:100%; height:auto; }
+img:not(.avatar):not(.article-cover-img), video, canvas{ max-width:100%; height:auto; }
 svg:not(.icon):not(.gfx){ max-width:100%; height:auto; } /* ícones da UI (classe .icon, ver Icons.svg) e a arte dos cards (.gfx) ficam de fora — já têm tamanho fixo controlado por outra regra; deixar "height:auto" pegar neles distorcia o desenho (ícones) ou fazia a arte vazar da caixa de 150px do card de notícia (.gfx) */
 .avatar{ max-width:none; } /* avatares já têm width/height fixos vindos dos atributos HTML — "height:auto" global os esticava em containers flex (ex.: linha de comentário), virando oval */
+.article-cover-img{ width:100%; height:100%; object-fit:cover; display:block; } /* capa real de notícia cadastrada pelo admin — mesmo papel do .gfx (arte gerada), então precisa da mesma exceção */
+
+/* ---- painel ADMIN: gerenciar notícias reais ---- */
+.admin-news-list{ display:flex; flex-direction:column; gap:8px; }
+.admin-news-row{
+  display:flex; align-items:center; gap:10px; background:var(--surface-3, rgba(255,255,255,.03));
+  border:1px solid var(--border-soft); border-radius:var(--radius-s); padding:8px 10px;
+}
+.admin-news-row__cat{ font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--teal); font-family:var(--f-mono); flex:0 0 auto; }
+.admin-news-row__title{ font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-news-row__actions{ display:flex; gap:6px; flex:0 0 auto; }
+.admin-news-row .card-icon-btn{ position:static; width:26px; height:26px; }
 
 @media (max-width:900px){
   .container{ padding:0 16px; }

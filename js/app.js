@@ -571,7 +571,8 @@ function renderSearchDropdown(query){
   const input = $('#searchInput');
   if (!query || query.length < 2){ closeSearchDropdown(); return; }
 
-  const newsMatches = NEWS.filter(n => n.title.toLowerCase().includes(query)).slice(0, 4);
+  const newsPool = State.articles.length ? State.articles : NEWS;
+  const newsMatches = newsPool.filter(n => n.title.toLowerCase().includes(query)).slice(0, 4);
   const productMatches = PRODUCTS.filter(p => p.name.toLowerCase().includes(query)).slice(0, 4);
 
   if (!newsMatches.length && !productMatches.length){
@@ -582,7 +583,7 @@ function renderSearchDropdown(query){
       html += `<div class="search-dropdown__group-label">NOTÍCIAS</div>`;
       html += newsMatches.map(n => `
         <button type="button" class="search-dropdown__item" data-search-article="${n.id}" role="option">
-          <span class="search-dropdown__item-media">${gameArt(n.category, n.id)}</span>
+          <span class="search-dropdown__item-media">${articleMedia(n, n.id)}</span>
           <span>
             <span class="search-dropdown__item-title">${Utils.escapeHtml(n.title)}</span>
             <span class="search-dropdown__item-sub">${catInfo(n.category).label}</span>
@@ -739,7 +740,7 @@ function renderTrendingList(news){
   $('#trendingList').innerHTML = top.map((a, i) => `
     <button type="button" class="trending-item" data-open-article="${a.id}">
       <span class="trending-item__rank">${i + 1}</span>
-      <span class="trending-item__media">${gameArt(a.category, a.id)}</span>
+      <span class="trending-item__media">${articleMedia(a, a.id)}</span>
       <span class="trending-item__body">
         <span class="trending-item__title">${Utils.escapeHtml(a.title)}</span>
         <span class="trending-item__stats">${Icons.svg('heart', 11)} ${a.likeCount} · ${Icons.svg('comment', 11)} ${a.comments}</span>
@@ -844,6 +845,15 @@ function filteredArticles(){
   });
 }
 
+/* Notícias reais cadastradas pelo admin podem ter uma imagem de capa de
+   verdade; sem ela (ou nas notícias de demonstração), cai na arte SVG
+   abstrata gerada por categoria (gameArt), mantendo o visual consistente. */
+function articleMedia(article, seed){
+  return article.coverImage
+    ? `<img class="article-cover-img" src="${article.coverImage}" alt="" loading="lazy" decoding="async">`
+    : gameArt(article.category, seed);
+}
+
 function renderArticleGrid(){
   const list = filteredArticles();
   const grid = $('#articleGrid');
@@ -863,7 +873,7 @@ function renderArticleGrid(){
     return `
     <article class="article-card" data-open-article="${a.id}">
       <div class="article-card__media">
-        ${gameArt(a.category, a.id + i)}
+        ${articleMedia(a, a.id + i)}
         <span class="article-card__idx">${String(baseIdx + i + 1).padStart(2, '0')}</span>
         <div class="article-card__quick-actions">
           <button type="button" class="card-icon-btn" data-share-article="${a.id}" aria-label="Compartilhar notícia">${Icons.svg('share', 14)}</button>
@@ -900,10 +910,11 @@ async function openArticleModal(id){
   const highlights = await Api.getArticleHighlights(id);
   const liked = State.user ? likeIds.includes(State.user.id) : false;
   const bookmarked = State.bookmarks.includes(id);
-  const related = NEWS.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
+  const relatedPool = State.articles.length ? State.articles : NEWS;
+  const related = relatedPool.filter(n => n.category === article.category && n.id !== article.id).slice(0, 3);
 
   openModal('lg', `
-    <div class="article-hero-media">${gameArt(article.category, article.id)}</div>
+    <div class="article-hero-media">${articleMedia(article, article.id)}</div>
     <div class="article-body">
       <span class="chip">${catInfo(article.category).label}</span>
       <h2 style="margin-top:12px;">${Utils.escapeHtml(article.title)}</h2>
@@ -933,7 +944,7 @@ async function openArticleModal(id){
         <div class="related-grid">
           ${related.map(r => `
             <button type="button" class="related-card" data-open-article="${r.id}">
-              <span class="related-card__media">${gameArt(r.category, r.id)}</span>
+              <span class="related-card__media">${articleMedia(r, r.id)}</span>
               <span class="related-card__title">${Utils.escapeHtml(r.title)}</span>
             </button>`).join('')}
         </div>
@@ -2853,7 +2864,8 @@ function renderProfileTab(tab){
       reader.readAsDataURL(file);
     });
   } else if (tab === 'salvos'){
-    const items = State.bookmarks.map(id => NEWS.find(n => n.id === id)).filter(Boolean).reverse();
+    const savedPool = State.articles.length ? State.articles : NEWS;
+    const items = State.bookmarks.map(id => savedPool.find(n => n.id === id)).filter(Boolean).reverse();
     if (!items.length){
       box.innerHTML = `
         <div class="empty-state">
@@ -2870,7 +2882,7 @@ function renderProfileTab(tab){
         ${items.map(a => `
           <div class="saved-item" data-saved-row="${a.id}">
             <button type="button" class="saved-item__open" data-open-article="${a.id}">
-              <span class="saved-item__media">${gameArt(a.category, a.id)}</span>
+              <span class="saved-item__media">${articleMedia(a, a.id)}</span>
               <span class="saved-item__body">
                 <span class="chip saved-item__chip">${catInfo(a.category).label}</span>
                 <span class="saved-item__title">${Utils.escapeHtml(a.title)}</span>
@@ -3142,6 +3154,8 @@ function renderProfileTab(tab){
     });
   } else if (tab === 'admin'){
     box.innerHTML = `
+      <div id="adminNewsSection"></div>
+      <hr style="border:none;border-top:1px solid var(--border-soft);margin:24px 0;">
       <div class="field">
         <label>Assunto</label>
         <div class="field-input"><input id="newsletterAdminSubject" placeholder="Novidades da semana na Nexus Arena"></div>
@@ -3153,6 +3167,7 @@ function renderProfileTab(tab){
       <div id="newsletterAdminProgress" class="field-hint"></div>
       <button type="button" class="btn btn-primary" id="newsletterAdminSend">Enviar para todos os inscritos</button>
     `;
+    renderAdminNewsSection();
     $('#newsletterAdminSend').addEventListener('click', async () => {
       const subject = $('#newsletterAdminSubject').value.trim();
       const body = $('#newsletterAdminBody').value.trim();
@@ -3175,6 +3190,125 @@ function renderProfileTab(tab){
       }
     });
   }
+}
+
+/* ============================================================================
+   ADMIN — GERENCIAR NOTÍCIAS REAIS (Firestore, coleção "articles")
+   --------------------------------------------------------------------------
+   As notícias de demonstração (data.js) continuam fixas no código; o que
+   aparece aqui, com botões de editar/remover, são só as cadastradas por um
+   admin através deste painel — elas se somam às de demonstração na home,
+   na busca, nas relacionadas e nos salvos (ver Api.getNews/getArticle).
+   ========================================================================== */
+async function renderAdminNewsSection(){
+  const box = $('#adminNewsSection');
+  if (!box) return;
+  box.innerHTML = `<p style="font-size:12.5px;color:var(--text-faint);">Carregando notícias...</p>`;
+  const list = await Api.getCustomArticles();
+
+  box.innerHTML = `
+    <h3 style="font-size:14px;margin-bottom:12px;">${Icons.svg('newspaper', 16)} Notícias cadastradas</h3>
+    <div id="adminNewsList" class="admin-news-list">
+      ${list.length ? list.map(a => `
+        <div class="admin-news-row" data-admin-news-row="${a.id}">
+          <span class="admin-news-row__cat">${catInfo(a.category).label}</span>
+          <span class="admin-news-row__title">${Utils.escapeHtml(a.title)}</span>
+          <span class="admin-news-row__actions">
+            <button type="button" class="card-icon-btn" data-edit-article="${a.id}" aria-label="Editar notícia">${Icons.svg('edit', 14)}</button>
+            <button type="button" class="card-icon-btn" data-delete-article="${a.id}" aria-label="Remover notícia">${Icons.svg('trash', 14)}</button>
+          </span>
+        </div>`).join('') : `<p style="font-size:12.5px;color:var(--text-faint);">Nenhuma notícia cadastrada ainda.</p>`}
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" id="adminNewsNewBtn" style="margin-top:14px;">${Icons.svg('plus', 13)} Nova notícia</button>
+    <div id="adminNewsFormWrap"></div>
+  `;
+
+  $('#adminNewsNewBtn').addEventListener('click', () => renderAdminNewsForm(null));
+  $all('[data-edit-article]', box).forEach(b => b.addEventListener('click', () => {
+    const article = list.find(a => a.id === b.dataset.editArticle);
+    if (article) renderAdminNewsForm(article);
+  }));
+  $all('[data-delete-article]', box).forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Remover essa notícia? Essa ação não pode ser desfeita.')) return;
+    try{
+      await Api.deleteArticle(b.dataset.deleteArticle);
+      Toast.show('Notícia removida.', 'success', 'trash');
+      renderAdminNewsSection();
+      if (State.view === 'home') renderHomeView();
+    }catch(err){
+      Toast.show(err.message || 'Não foi possível remover a notícia.', 'error');
+    }
+  }));
+}
+
+function renderAdminNewsForm(article){
+  const wrap = $('#adminNewsFormWrap');
+  const editing = !!article;
+  const catOptions = CATEGORIES.map(c => `<option value="${c.key}" ${article && article.category === c.key ? 'selected' : ''}>${c.label}</option>`).join('');
+
+  wrap.innerHTML = `
+    <div class="admin-news-form" style="margin-top:16px;border-top:1px solid var(--border-soft);padding-top:16px;">
+      <h4 style="font-size:13px;margin-bottom:12px;">${editing ? 'Editar notícia' : 'Nova notícia'}</h4>
+      <div class="field">
+        <label>Categoria</label>
+        <div class="field-input"><select id="anCategory" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;padding:0 10px;">${catOptions}</select></div>
+      </div>
+      <div class="field">
+        <label>Título</label>
+        <div class="field-input"><input id="anTitle" maxlength="140" value="${editing ? Utils.escapeHtml(article.title) : ''}" placeholder="Título da notícia"></div>
+      </div>
+      <div class="field">
+        <label>Resumo (aparece no card, 1-2 frases)</label>
+        <div class="field-input" style="height:auto;"><textarea id="anExcerpt" rows="2" maxlength="220" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;resize:vertical;padding:10px;" placeholder="Resumo curto...">${editing ? Utils.escapeHtml(article.excerpt) : ''}</textarea></div>
+      </div>
+      <div class="field">
+        <label>Conteúdo (separe os parágrafos com uma linha em branco)</label>
+        <div class="field-input" style="height:auto;"><textarea id="anContent" rows="8" style="width:100%;background:none;border:none;color:var(--text);font-size:13px;outline:none;resize:vertical;padding:10px;" placeholder="Primeiro parágrafo...
+
+Segundo parágrafo...">${editing ? article.content.join('\n\n') : ''}</textarea></div>
+      </div>
+      <div class="field">
+        <label>Autor</label>
+        <div class="field-input"><input id="anAuthor" maxlength="60" value="${editing ? Utils.escapeHtml(article.author) : 'Redação Nexus'}"></div>
+      </div>
+      <div class="field">
+        <label>Imagem de capa (opcional — URL; sem isso usa a arte gerada por categoria)</label>
+        <div class="field-input"><input id="anCover" value="${editing && article.coverImage ? Utils.escapeHtml(article.coverImage) : ''}" placeholder="https://..."></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px;">
+        <button type="button" class="btn btn-primary" id="anSubmit">${editing ? 'Salvar alterações' : 'Publicar notícia'}</button>
+        <button type="button" class="btn btn-secondary" id="anCancel">Cancelar</button>
+      </div>
+    </div>
+  `;
+
+  $('#anCancel').addEventListener('click', () => { wrap.innerHTML = ''; });
+  $('#anSubmit').addEventListener('click', async () => {
+    const btn = $('#anSubmit');
+    const payload = {
+      category: $('#anCategory').value,
+      title: $('#anTitle').value,
+      excerpt: $('#anExcerpt').value,
+      content: $('#anContent').value.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean),
+      author: $('#anAuthor').value,
+      coverImage: $('#anCover').value
+    };
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    try{
+      if (editing) await Api.updateArticle(article.id, payload);
+      else await Api.createArticle(payload);
+      Toast.show(editing ? 'Notícia atualizada.' : 'Notícia publicada.', 'success', 'checkCircle');
+      wrap.innerHTML = '';
+      renderAdminNewsSection();
+      if (State.view === 'home') renderHomeView();
+    }catch(err){
+      Toast.show(err.message || 'Não foi possível salvar a notícia.', 'error');
+    }finally{
+      btn.disabled = false; btn.textContent = editing ? 'Salvar alterações' : 'Publicar notícia';
+    }
+  });
+
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ============================================================================

@@ -25,6 +25,8 @@
      newsletterSubs/{email}    — doc id = e-mail (URL-encoded)
      meta/seedStatus           — trava para o seed de conteúdo de demonstração rodar 1x só
      communityPosts/{id}       — posts da Central da Comunidade (notícia/vídeo enviados por usuários)
+     articles/{id}             — notícias reais cadastradas pelo admin (somam-se às notícias
+                                  estáticas de data.js, ver comentário no topo de api.js)
    ========================================================================== */
 
 const DB = {
@@ -111,6 +113,26 @@ const DB = {
     await window.fb.setDoc(this._doc('articleLikes', articleId), {
       userIds: like ? window.fb.arrayUnion(uid) : window.fb.arrayRemove(uid)
     }, { merge: true });
+  },
+
+  // ---- notícias cadastradas pelo admin (além das estáticas de data.js) ----
+  async getArticles(){
+    const snap = await window.fb.getDocs(this._col('articles'));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
+  async getArticleById(id){
+    const snap = await window.fb.getDoc(this._doc('articles', id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  },
+  async createArticle(data){
+    const ref = await window.fb.addDoc(this._col('articles'), data);
+    return { id: ref.id, ...data };
+  },
+  async updateArticle(id, patch){
+    await window.fb.updateDoc(this._doc('articles', id), patch);
+  },
+  async deleteArticle(id){
+    await window.fb.deleteDoc(this._doc('articles', id));
   },
 
   // ---- carrinho ----

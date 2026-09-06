@@ -90,6 +90,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Notícias reais cadastradas pelo admin (as de demonstração ficam no
+    // código, em data.js, e não passam por aqui). Leitura pública, como
+    // as demais notícias; escrita restrita ao e-mail admin — troque pelo
+    // mesmo e-mail usado em ADMIN_EMAILS no js/app.js.
+    match /articles/{id} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null
+        && request.auth.token.email == 'trajano.neves01@gmail.com';
+    }
+
     // Trava do seed de conteúdo de demonstração — qualquer um lê,
     // ninguém além do próprio app cria (roda 1x só).
     match /meta/{docId} {
