@@ -502,6 +502,12 @@ function openForgotPasswordModal(){
    SHELL: navbar, ticker, busca, carrinho, perfil
    ========================================================================== */
 function bindShellEvents(){
+  $('#brandHomeBtn').addEventListener('click', () => {
+    navigateTo('home');
+    $('#navLinks').classList.remove('mobile-open');
+    $('#mobileMenuBtn').setAttribute('aria-expanded', 'false');
+  });
+
   $('#mobileMenuBtn').addEventListener('click', () => {
     const open = $('#navLinks').classList.toggle('mobile-open');
     $('#mobileMenuBtn').setAttribute('aria-expanded', String(open));

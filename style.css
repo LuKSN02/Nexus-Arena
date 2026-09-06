@@ -146,7 +146,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
   z-index:100;
 }
 .navbar__inner{ display:flex; align-items:center; gap:16px; width:100%; }
-.brand{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+.brand{ display:flex; align-items:center; gap:10px; flex:0 0 auto; background:none; border:none; padding:0; margin:0; font:inherit; cursor:pointer; text-align:left; color:inherit; }
 .brand__mark{ width:34px; height:34px; }
 .brand__name{ font-family:var(--f-display); font-size:19px; font-weight:700; letter-spacing:.03em; }
 .brand__name em{ font-style:normal; color:var(--signal); }
