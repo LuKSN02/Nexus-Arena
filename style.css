@@ -72,6 +72,7 @@ p{ margin:0; line-height:1.55; color:var(--text-dim); }
 a{ color:inherit; text-decoration:none; }
 button{ font-family:var(--f-body); cursor:pointer; }
 input,select,textarea{ font-family:var(--f-body); }
+select option{ color:var(--bg-alt); background:#fff; } /* o menu suspenso do <select> é renderizado pelo navegador com fundo branco fixo (não dá pra estilizar isso via CSS) — sem isso, as opções herdavam --text (quase branco) e ficavam ilegíveis em cima do branco */
 ::selection{ background:var(--signal); color:#fff; }
 ::-webkit-scrollbar{ width:10px; height:10px; }
 ::-webkit-scrollbar-track{ background:transparent; }
