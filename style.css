@@ -255,7 +255,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 }
 .profile-chip:hover{ border-color:var(--text-faint); }
 .avatar-wrap{ position:relative; flex:0 0 auto; line-height:0; }
-.avatar{ border-radius:50%; object-fit:cover; display:block; background:var(--surface-3); }
+.avatar{ border-radius:50%; object-fit:cover; display:block; background:var(--surface-3); flex-shrink:0; }
 .profile-chip__text{ display:flex; flex-direction:column; justify-content:center; gap:2px; line-height:1; text-align:left; }
 .profile-chip__name{ font-size:13.5px; font-weight:700; color:var(--text); white-space:nowrap; }
 .profile-chip__tag{ font-size:11px; color:var(--text-dim); font-family:var(--f-mono); letter-spacing:.02em; }
@@ -495,7 +495,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 .comment-form textarea:focus{ border-color:var(--teal); }
 .comment-list{ display:flex; flex-direction:column; gap:20px; }
 .comment-thread{ display:flex; flex-direction:column; }
-.comment{ display:flex; gap:11px; }
+.comment{ display:flex; gap:11px; align-items:flex-start; }
 .comment__body{ flex:1; }
 .comment__head{ display:flex; align-items:center; gap:8px; margin-bottom:3px; }
 .comment__name{ font-size:13px; font-weight:700; }
@@ -947,8 +947,9 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 /* Nunca deixa o layout inteiro rolar na horizontal por causa de UM elemento
    largo demais (a causa mais comum de "tudo fora do lugar" no celular). */
 html, body{ overflow-x:hidden; max-width:100%; }
-img, video, canvas{ max-width:100%; height:auto; }
-svg:not(.icon){ max-width:100%; height:auto; } /* ícones da UI (classe .icon, ver Icons.svg) ficam de fora — já têm tamanho fixo e proporção definida pelo viewBox; deixar "height:auto" pegar neles distorcia o desenho (ex.: ícone de "Responder" nos comentários) */
+img:not(.avatar), video, canvas{ max-width:100%; height:auto; }
+svg:not(.icon):not(.gfx){ max-width:100%; height:auto; } /* ícones da UI (classe .icon, ver Icons.svg) e a arte dos cards (.gfx) ficam de fora — já têm tamanho fixo controlado por outra regra; deixar "height:auto" pegar neles distorcia o desenho (ícones) ou fazia a arte vazar da caixa de 150px do card de notícia (.gfx) */
+.avatar{ max-width:none; } /* avatares já têm width/height fixos vindos dos atributos HTML — "height:auto" global os esticava em containers flex (ex.: linha de comentário), virando oval */
 
 @media (max-width:900px){
   .container{ padding:0 16px; }
