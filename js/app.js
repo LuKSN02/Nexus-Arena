@@ -203,6 +203,25 @@ function fillStaticIcons(){
   $('#navLinks').innerHTML = NAV_ITEMS.map(n =>
     `<button class="nav-link${n.view === 'home' ? ' active' : ''}" data-view="${n.view}" type="button">${Icons.svg(n.icon, 15)}<span>${n.label}</span></button>`
   ).join('');
+  $all('#footerSocial a[data-icon]').forEach(a => a.innerHTML = Icons.svg(a.dataset.icon, 16));
+  $all('#authFooterSocial a[data-icon]').forEach(a => a.innerHTML = Icons.svg(a.dataset.icon, 16));
+  $('#loginIdentifierIcon').innerHTML = Icons.svg('mail', 15);
+  $('#loginPasswordIcon').innerHTML = Icons.svg('lock', 15);
+  $('#regUsernameIcon').innerHTML = Icons.svg('user', 15);
+  $('#regEmailIcon').innerHTML = Icons.svg('mail', 15);
+  $('#regPasswordIcon').innerHTML = Icons.svg('lock', 15);
+  $('#regPassword2Icon').innerHTML = Icons.svg('lock', 15);
+  $('#authTabLoginIcon').innerHTML = Icons.svg('logout', 14);
+  $('#authTabRegisterIcon').innerHTML = Icons.svg('user', 14);
+  $('#loginSubmitIcon').innerHTML = Icons.svg('arrowRight', 15);
+  $('#registerSubmitIcon').innerHTML = Icons.svg('arrowRight', 15);
+  $('#authSideRight').innerHTML = [
+    { icon: 'gamepad', label: 'Notícias atualizadas' },
+    { icon: 'star', label: 'Torneios e competições' },
+    { icon: 'users', label: 'Comunidade ativa' }
+  ].map(i => `<div class="auth-side__item"><span class="auth-side__icon">${Icons.svg(i.icon, 19)}</span><span>${i.label}</span></div>`).join('');
+  $('#authGamesStrip').innerHTML = CATEGORIES.filter(c => c.key !== 'geral').slice(0, 5)
+    .map(c => `<span class="auth-games-strip__item">${c.label}</span>`).join('');
 }
 
 /* ============================================================================
@@ -718,6 +737,11 @@ async function renderHomeView(){
               <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">Inscrever-se</button>
             </form>
           </div>
+          <div class="promo-card">
+            <img class="promo-card__mark" src="assets/icon-64.png" alt="" width="42" height="42">
+            <span class="promo-card__name">NEXUS <em>ARENA</em></span>
+            <span class="promo-card__tag">O seu portal de notícias de e-sports</span>
+          </div>
         </aside>
       </div>
     </div>
@@ -790,7 +814,7 @@ function renderHeroCarousel(slides){
       <div class="hero-slide__bg">${gameArt(a.category, a.id)}</div>
       <div class="hero-slide__scrim"></div>
       <div class="hero-slide__content">
-        <span class="chip">${catInfo(a.category).label}</span>
+        <span class="chip" style="background:${catInfo(a.category).color};border-color:${catInfo(a.category).color};color:#fff;">${catInfo(a.category).label}</span>
         <h3>${Utils.escapeHtml(a.title)}</h3>
         <p>${Utils.escapeHtml(a.excerpt)}</p>
         <div class="hero-meta">
@@ -874,14 +898,13 @@ function renderArticleGrid(){
     <article class="article-card" data-open-article="${a.id}">
       <div class="article-card__media">
         ${articleMedia(a, a.id + i)}
-        <span class="article-card__idx">${String(baseIdx + i + 1).padStart(2, '0')}</span>
+        <span class="article-card__cat-badge" style="background:${catInfo(a.category).color}">${catInfo(a.category).label}</span>
         <div class="article-card__quick-actions">
           <button type="button" class="card-icon-btn" data-share-article="${a.id}" aria-label="Compartilhar notícia">${Icons.svg('share', 14)}</button>
           <button type="button" class="card-icon-btn ${bookmarked ? 'active' : ''}" data-bookmark-toggle="${a.id}" aria-pressed="${bookmarked}" aria-label="${bookmarked ? 'Remover dos salvos' : 'Salvar notícia'}">${Icons.svg('bookmark', 14)}</button>
         </div>
       </div>
       <div class="article-card__body">
-        <span class="article-card__cat">${catInfo(a.category).label}</span>
         <h4>${Utils.escapeHtml(a.title)}</h4>
         <p class="excerpt">${Utils.escapeHtml(a.excerpt)}</p>
         <div class="article-card__foot">

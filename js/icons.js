@@ -66,7 +66,9 @@ const ICON_PATHS = {
   play: '<polygon points="6 3.5 20 12 6 20.5 6 3.5" fill="currentColor" stroke="none"/>',
   upload: '<path d="M12 16V4"/><polyline points="7 8.5 12 3.5 17 8.5"/><path d="M4 16v3a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-3"/>',
   arrowUp: '<line x1="12" y1="19" x2="12" y2="6"/><polyline points="6 11 12 5 18 11"/>',
-  arrowDown: '<line x1="12" y1="5" x2="12" y2="18"/><polyline points="6 13 12 19 18 13"/>'
+  arrowDown: '<line x1="12" y1="5" x2="12" y2="18"/><polyline points="6 13 12 19 18 13"/>',
+  youtube: '<rect x="2" y="5.5" width="20" height="13" rx="4"/><polygon points="10 9 15.5 12 10 15" fill="currentColor" stroke="none"/>',
+  twitch: '<path d="M4 3h16v11l-4 4h-4l-2.5 2.5H8V18H4V3z"/><line x1="13.5" y1="7" x2="13.5" y2="11.5"/><line x1="9" y1="7" x2="9" y2="11.5"/>'
 };
 
 const Icons = {

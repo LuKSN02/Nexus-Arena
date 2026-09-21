@@ -48,17 +48,39 @@
 
 <!-- ================= TELA DE AUTENTICAÇÃO ================= -->
 <section id="authScreen" class="auth-screen">
-  <div class="auth-card">
-    <div class="auth-card__brand">
+  <div class="auth-bg-art" aria-hidden="true"></div>
+
+  <div class="auth-topbar">
+    <div class="auth-topbar__brand">
       <img src="assets/icon-64.png" width="30" height="30" alt="" style="border-radius:8px;display:block;">
       <span class="brand__name">NEXUS <em>ARENA</em></span>
+      <span class="auth-topbar__sep"></span>
+      <span class="auth-topbar__tag">O seu portal de notícias de e-sports</span>
     </div>
+    <nav class="auth-topbar__links" aria-hidden="true">
+      <span>Jogos</span><em>/</em><span>Competições</span><em>/</em><span>Comunidade</span>
+    </nav>
+  </div>
+
+  <div class="auth-side auth-side--left" aria-hidden="true">
+    <p class="auth-side__title">Informação que<br>move o cenário<br>dos esports</p>
+    <span class="auth-side__rule"></span>
+  </div>
+
+  <div class="auth-side auth-side--right" aria-hidden="true" id="authSideRight"></div>
+
+  <div class="auth-card">
+    <div class="auth-card__brand">
+      <img src="assets/icon-64.png" width="52" height="52" alt="" style="border-radius:12px;display:block;">
+    </div>
+    <h1>NEXUS <em>ARENA</em></h1>
+    <p class="auth-sub">Entre para o universo dos e-sports</p>
 
     <div id="authAlert"></div>
 
     <div class="auth-tabs" role="tablist">
-      <button class="auth-tab active" data-tab="login" type="button">Entrar</button>
-      <button class="auth-tab" data-tab="register" type="button">Criar conta</button>
+      <button class="auth-tab active" data-tab="login" type="button"><span id="authTabLoginIcon"></span>Entrar</button>
+      <button class="auth-tab" data-tab="register" type="button"><span id="authTabRegisterIcon"></span>Criar conta</button>
     </div>
 
     <div class="auth-social">
@@ -73,14 +95,16 @@
       <div class="field">
         <label for="loginIdentifier">E-mail ou usuário</label>
         <div class="field-input" id="loginIdentifierWrap">
-          <input id="loginIdentifier" name="identifier" type="text" autocomplete="username" placeholder="voce@email.com">
+          <span class="field-icon" id="loginIdentifierIcon"></span>
+          <input id="loginIdentifier" name="identifier" type="text" autocomplete="username" placeholder="Digite seu e-mail ou nome de usuário">
         </div>
         <div class="field-hint" id="loginIdentifierHint"></div>
       </div>
       <div class="field">
         <label for="loginPassword">Senha</label>
         <div class="field-input" id="loginPasswordWrap">
-          <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Sua senha">
+          <span class="field-icon" id="loginPasswordIcon"></span>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="Digite sua senha">
           <button type="button" class="field-toggle" data-toggle-pwd="loginPassword" aria-label="Mostrar senha"></button>
         </div>
         <div class="field-hint" id="loginPasswordHint"></div>
@@ -88,7 +112,7 @@
       <div class="auth-forgot-row">
         <a href="#" class="link-accent" id="forgotPasswordLink">Esqueceu a senha?</a>
       </div>
-      <button type="submit" class="btn btn-primary btn-block" id="loginSubmit">Entrar na plataforma</button>
+      <button type="submit" class="btn btn-primary btn-block" id="loginSubmit"><span id="loginSubmitIcon"></span>Entrar na plataforma</button>
     </form>
 
     <!-- ---- CADASTRO ---- -->
@@ -96,6 +120,7 @@
       <div class="field">
         <label for="regUsername">Nome de usuário</label>
         <div class="field-input" id="regUsernameWrap">
+          <span class="field-icon" id="regUsernameIcon"></span>
           <input id="regUsername" name="username" type="text" autocomplete="nickname" placeholder="SeuNick">
         </div>
         <div class="field-hint" id="regUsernameHint"></div>
@@ -103,6 +128,7 @@
       <div class="field">
         <label for="regEmail">E-mail</label>
         <div class="field-input" id="regEmailWrap">
+          <span class="field-icon" id="regEmailIcon"></span>
           <input id="regEmail" name="email" type="email" autocomplete="email" placeholder="voce@email.com">
         </div>
         <div class="field-hint" id="regEmailHint"></div>
@@ -110,6 +136,7 @@
       <div class="field">
         <label for="regPassword">Senha</label>
         <div class="field-input" id="regPasswordWrap">
+          <span class="field-icon" id="regPasswordIcon"></span>
           <input id="regPassword" name="password" type="password" autocomplete="new-password" placeholder="Crie uma senha forte">
           <button type="button" class="field-toggle" data-toggle-pwd="regPassword" aria-label="Mostrar senha"></button>
         </div>
@@ -119,15 +146,39 @@
       <div class="field">
         <label for="regPassword2">Confirmar senha</label>
         <div class="field-input" id="regPassword2Wrap">
+          <span class="field-icon" id="regPassword2Icon"></span>
           <input id="regPassword2" name="password2" type="password" autocomplete="new-password" placeholder="Repita a senha">
         </div>
         <div class="field-hint" id="regPassword2Hint"></div>
       </div>
-      <button type="submit" class="btn btn-primary btn-block" id="registerSubmit">Criar minha conta</button>
+      <button type="submit" class="btn btn-primary btn-block" id="registerSubmit"><span id="registerSubmitIcon"></span>Criar minha conta</button>
     </form>
 
     <div class="auth-foot" id="authSwitchHint">
       Ainda não tem conta? <a href="#" class="link-accent" id="gotoRegister">Cadastre-se</a>
+    </div>
+  </div>
+
+  <div class="auth-games-strip">
+    <span id="authGamesStrip"></span>
+    <span class="auth-games-strip__more">+ e muito mais</span>
+  </div>
+
+  <div class="auth-footer">
+    <div class="auth-footer__brand">
+      <img src="assets/icon-64.png" width="26" height="26" alt="" style="border-radius:6px;display:block;">
+      <span class="brand__name">NEXUS <em>ARENA</em></span>
+      <span class="auth-footer__copy">© 2026 Nexus Arena. Todos os direitos reservados.</span>
+    </div>
+    <div class="auth-footer__right">
+      <div class="footer-social" id="authFooterSocial">
+        <a href="#" aria-label="X (Twitter)" data-icon="x"></a>
+        <a href="#" aria-label="Instagram" data-icon="instagram"></a>
+        <a href="#" aria-label="YouTube" data-icon="youtube"></a>
+        <a href="#" aria-label="Discord" data-icon="discord"></a>
+        <a href="#" aria-label="Twitch" data-icon="twitch"></a>
+      </div>
+      <span class="auth-footer__slogan">Juntos pelo<br>e-sports</span>
     </div>
   </div>
 </section>
@@ -214,6 +265,13 @@
             <span class="brand__name">NEXUS <em>ARENA</em></span>
           </div>
           <p style="font-size:12.5px;max-width:280px;">Notícias de e-sports, análises de meta e loja de periféricos em um só lugar.</p>
+          <div class="footer-social" id="footerSocial">
+            <a href="#" aria-label="X (Twitter)" data-icon="x"></a>
+            <a href="#" aria-label="Instagram" data-icon="instagram"></a>
+            <a href="#" aria-label="YouTube" data-icon="youtube"></a>
+            <a href="#" aria-label="Discord" data-icon="discord"></a>
+            <a href="#" aria-label="Twitch" data-icon="twitch"></a>
+          </div>
         </div>
         <div>
           <h5>NOTÍCIAS</h5>
