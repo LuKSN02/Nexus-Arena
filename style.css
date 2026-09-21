@@ -289,7 +289,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
    AUTENTICAÇÃO
    ========================================================================== */
 .auth-screen{
-  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
   padding:32px; position:relative; overflow:hidden;
 }
 .auth-screen::before{
