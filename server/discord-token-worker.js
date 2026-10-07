@@ -83,8 +83,15 @@ export default {
     if (!res.ok) return json({ error: 'discord' }, 401);
     const info = await res.json();
     if (!info.application || info.application.id !== env.DISCORD_CLIENT_ID) return json({ error: 'app' }, 401);
-    const u = info.user;
-    if (!u || !u.id) return json({ error: 'user' }, 401);
+    if (!info.user || !info.user.id) return json({ error: 'user' }, 401);
+
+    // /oauth2/@me NÃO devolve o e-mail; ele vem de /users/@me (escopo "email").
+    const meRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!meRes.ok) return json({ error: 'discord-user' }, 401);
+    const u = await meRes.json();
+    if (!u || u.id !== info.user.id) return json({ error: 'user' }, 401);
 
     const customToken = await signCustomToken(env, `discord_${u.id}`);
     return json({
