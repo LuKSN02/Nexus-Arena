@@ -6,6 +6,8 @@
       ".firebaserc",
       "firestore.rules",
       "README.md",
+      "server/**",
+      "PLANO_DE_ACAO.md",
       "**/.*",
       "**/node_modules/**"
     ],

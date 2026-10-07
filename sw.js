@@ -11,7 +11,7 @@
    disco (file://). Veja o README para como rodar um servidor local.
    ========================================================================== */
 
-const CACHE_VERSION = 'nexus-arena-v13';
+const CACHE_VERSION = 'nexus-arena-v14';
 
 const APP_SHELL = [
   './',
@@ -25,6 +25,7 @@ const APP_SHELL = [
   './js/data.js',
   './js/api.js',
   './js/app.js',
+  './js/newsletter-admin.js',
   './assets/favicon-32.png',
   './assets/favicon-16.png',
   './assets/apple-touch-icon.png',

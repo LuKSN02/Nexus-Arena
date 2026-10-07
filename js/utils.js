@@ -29,6 +29,24 @@ const Utils = {
       .replace(/'/g, '&#39;');
   },
 
+  /* URL de imagem segura para usar em src="...": só aceita data:image/... ou
+     https://... e já devolve escapada para atributo HTML. Qualquer outra coisa
+     (javascript:, aspas soltas etc.) vira o fallback. */
+  safeImg(url, fallback = ''){
+    const s = String(url == null ? '' : url).trim();
+    const ok = /^data:image\/(png|jpe?g|webp|gif|svg\+xml)[;,][^"'<>\s]*$/i.test(s)
+            || /^https:\/\/[^\s"'<>]+$/i.test(s);
+    return Utils.escapeHtml(ok ? s : fallback);
+  },
+
+  /* Link http(s) seguro (href, vídeo etc.). Devolve '' se inválido. */
+  safeHttpUrl(url){
+    const s = String(url == null ? '' : url).trim();
+    if (!/^https?:\/\/[^\s"'<>`]+$/i.test(s)) return '';
+    try{ new URL(s); }catch(e){ return ''; }
+    return s;
+  },
+
   clamp(n, min, max){ return Math.min(max, Math.max(min, n)); },
 
   debounce(fn, wait = 250){
@@ -77,7 +95,7 @@ const Utils = {
   avatarDataUri(seed, bg, fg = '#ffffff'){
     const letter = Utils.initials(seed) || '?';
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="${bg}"/><text x="50%" y="53%" font-family="Rajdhani, sans-serif" font-weight="700" font-size="32" fill="${fg}" text-anchor="middle" dominant-baseline="middle">${letter}</text></svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg).replace(/'/g, '%27')}`;
   }
 };
 

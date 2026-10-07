@@ -372,3 +372,14 @@ e o funcionamento offline pra valer.
 Todos os ícones do site (carrinho, curtir, comentar, perfil, configurações,
 etc.) são SVG inline nativos — nenhum emoji é usado em nenhuma parte da
 interface.
+
+## Segurança — mudanças de 07/10/2026
+
+- `firestore.rules`: coleção `users` agora é legível só pelo dono; nova coleção
+  `usernames/{nome}` ({uid}) faz a checagem de nome livre. **Republique as regras
+  no console.** Contas antigas não têm doc em `usernames`: rode um backfill
+  (um doc por usuário existente) se quiser reservar os nomes já usados.
+- Login por nome de usuário foi removido (só e-mail). Admin exige e-mail verificado.
+- Login Discord persistente: publique `server/discord-token-worker.js` e preencha
+  `DISCORD_TOKEN_ENDPOINT` em `js/api.js` (instruções no topo do arquivo).
+- EmailJS: no painel, restrinja "Allowed domains" ao seu domínio.

@@ -43,6 +43,14 @@
 const DISCORD_CLIENT_ID = '1545831405936836658';
 const DISCORD_SCOPE = 'identify email';
 
+/* URL do Worker que troca o access_token do Discord por um Firebase Custom
+   Token com uid ESTÁVEL (discord_<id>) — assim a conta sobrevive a logout,
+   outro aparelho ou limpeza do navegador. Código pronto em
+   server/discord-token-worker.js (Cloudflare Workers, plano grátis, não exige
+   Blaze). Enquanto estiver vazio, o app usa o modo antigo (sessão anônima por
+   navegador), que PERDE a conta ao sair. */
+const DISCORD_TOKEN_ENDPOINT = 'https://nexus-discord-auth.trajano-neves01.workers.dev';
+
 // Tenta de novo (com uma pequena espera) quando o Firestore recusa por
 // "permission-denied" — usado logo após qualquer login novo, porque às
 // vezes a 1ª ou 2ª chamada saem antes do SDK terminar de propagar a sessão
@@ -64,16 +72,35 @@ async function withPermissionRetry(fn, { retries = 2, delayMs = 350 } = {}){
 
 const Api = {
 
+  /* Escolhe e RESERVA um nome de usuário livre (usado no login social e no
+     Discord). Se o nome já existe, acrescenta números até achar um livre. */
+  async _pickUsername(base, uid){
+    base = (base || 'Jogador').replace(/\s+/g, '').slice(0, 20) || 'Jogador';
+    for (let i = 0; i < 6; i++){
+      const cand = i === 0 ? base : base.slice(0, 16) + Math.floor(100 + Math.random() * 900);
+      try{
+        if (!(await DB.isUsernameTaken(cand.toLowerCase()))){
+          await DB.claimUsername(cand.toLowerCase(), uid);
+          return cand;
+        }
+      }catch(e){ /* tenta outro */ }
+    }
+    return base;
+  },
+
   /* -------------------- login com Discord (OAuth2 manual) -------------------- */
 
   // Chamado pelo clique no botão "Entrar com Discord" — redireciona a página.
   startDiscordLogin(){
     const redirectUri = location.origin + location.pathname;
+    const state = Utils.uid('st') + Math.random().toString(36).slice(2);
+    try{ sessionStorage.setItem('na_discord_state', state); }catch(e){}
     const url = 'https://discord.com/oauth2/authorize'
       + '?client_id=' + encodeURIComponent(DISCORD_CLIENT_ID)
       + '&redirect_uri=' + encodeURIComponent(redirectUri)
       + '&response_type=token'
-      + '&scope=' + encodeURIComponent(DISCORD_SCOPE);
+      + '&scope=' + encodeURIComponent(DISCORD_SCOPE)
+      + '&state=' + encodeURIComponent(state);
     location.href = url;
   },
 
@@ -82,34 +109,56 @@ const Api = {
   // de volta do Discord na URL; retorna null se não tinha nada pra processar.
   async handleDiscordRedirect(){
     if (!location.hash) return null;
-    // DEBUG TEMPORÁRIO: mostra no console exatamente o que o Discord mandou
-    // de volta na URL, antes de qualquer limpeza — remova depois de resolver.
-    console.log('[discord-login debug] hash recebido do Discord:', location.hash);
-
-    if (!location.hash.includes('access_token') && !location.hash.includes('error')) return null;
 
     const params = new URLSearchParams(location.hash.slice(1));
     const accessToken = params.get('access_token');
     const oauthError = params.get('error');
     const oauthErrorDesc = params.get('error_description');
+    // Só processa se o fragmento realmente é uma resposta OAuth do Discord.
+    if (!accessToken && !oauthError) return null;
+    const returnedState = params.get('state');
+    let expectedState = null;
+    try{ expectedState = sessionStorage.getItem('na_discord_state'); sessionStorage.removeItem('na_discord_state'); }catch(e){}
     // Limpa o #fragmento da URL pra não deixar o token exposto no histórico
     // do navegador nem processar de novo se a pessoa der F5.
     history.replaceState(null, '', location.pathname + location.search);
 
+    // Proteção contra login CSRF: o "state" que voltou precisa ser o mesmo
+    // que geramos em startDiscordLogin() neste navegador.
+    if (!expectedState || returnedState !== expectedState){
+      Toast.show('Não foi possível validar o login com o Discord. Tente novamente.', 'error', 'alertCircle');
+      return null;
+    }
+
     if (oauthError){
-      console.error('[discord-login debug] Discord retornou erro:', oauthError, oauthErrorDesc);
       Toast.show(`Discord recusou o login: ${oauthErrorDesc || oauthError}`, 'error', 'alertCircle');
       return null;
     }
     if (!accessToken) return null;
 
     let discordUser;
+    let customToken = null;
     try{
-      const res = await fetch('https://discord.com/api/users/@me', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      if (!res.ok) throw new Error('status ' + res.status);
-      discordUser = await res.json();
+      if (DISCORD_TOKEN_ENDPOINT){
+        // O Worker valida o token junto ao Discord (inclusive que ele foi
+        // emitido para ESTE app) e devolve os dados + o Custom Token.
+        const res = await fetch(DISCORD_TOKEN_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken })
+        });
+        if (!res.ok) throw new Error('status ' + res.status);
+        const data = await res.json();
+        discordUser = data.user;
+        customToken = data.customToken;
+        if (!discordUser || !customToken) throw new Error('resposta inválida');
+      } else {
+        const res = await fetch('https://discord.com/api/users/@me', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (!res.ok) throw new Error('status ' + res.status);
+        discordUser = await res.json();
+      }
     }catch(err){
       console.error('Erro ao buscar dados do usuário no Discord:', err);
       Toast.show('Não foi possível entrar com o Discord. Tente novamente.', 'error', 'alertCircle');
@@ -129,7 +178,10 @@ const Api = {
     // "permissão insuficiente" mesmo a sessão sendo válida.
     const ensureSession = async () => {
       let user = window.fb.auth.currentUser;
-      if (!user){
+      if (customToken){
+        const cred = await window.fb.signInWithCustomToken(window.fb.auth, customToken);
+        user = cred.user;
+      } else if (!user){
         const cred = await window.fb.signInAnonymously(window.fb.auth);
         user = cred.user;
       }
@@ -148,7 +200,9 @@ const Api = {
         // no console do Firebase durante testes) — descarta e recomeça.
         try{
           await window.fb.signOut(window.fb.auth).catch(() => {});
-          const cred = await window.fb.signInAnonymously(window.fb.auth);
+          const cred = customToken
+            ? await window.fb.signInWithCustomToken(window.fb.auth, customToken)
+            : await window.fb.signInAnonymously(window.fb.auth);
           await cred.user.getIdToken(true);
           fbUser = cred.user;
           profile = await withPermissionRetry(() => DB.getUserById(fbUser.uid));
@@ -169,7 +223,7 @@ const Api = {
         const avatarUrl = discordUser.avatar
           ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
           : null;
-        const username = (discordUser.global_name || discordUser.username || 'Jogador').replace(/\s+/g, '').slice(0, 20);
+        const username = await this._pickUsername(discordUser.global_name || discordUser.username, fbUser.uid);
         const tag = String(Math.floor(1000 + Math.random() * 9000));
         const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
         const newProfile = {
@@ -279,7 +333,7 @@ const Api = {
     }
     let usernameTaken;
     try{
-      usernameTaken = await DB.findUserByField('usernameLower', username.toLowerCase());
+      usernameTaken = await DB.isUsernameTaken(username.toLowerCase());
     }catch(err){
       console.error('Erro ao checar usuário no Firestore:', err);
       throw { message: `Não foi possível checar o usuário no banco de dados. Código: ${err.code || err.message || 'desconhecido'}.` };
@@ -314,7 +368,20 @@ const Api = {
       throw { message: `Não foi possível criar a conta. Código do erro: ${err.code || err.message || 'desconhecido'}.` };
     }
 
-    await window.fb.fbUpdateProfile(cred.user, { displayName: username });
+    // Reserva o nome de usuário. Se alguém pegou no meio tempo, desfaz a
+    // conta recém-criada para não sobrar uma conta sem perfil.
+    try{
+      if (await DB.isUsernameTaken(username.toLowerCase())) throw { code: 'taken' };
+      await DB.claimUsername(username.toLowerCase(), cred.user.uid);
+    }catch(err){
+      await window.fb.fbDeleteUser(cred.user).catch(() => {});
+      if (err && err.code === 'taken') throw { field: 'username', message: 'Este nome de usuário já está em uso.' };
+      throw { message: `Não foi possível reservar o nome de usuário. Código: ${err.code || 'desconhecido'}.` };
+    }
+
+    try{ await window.fb.fbUpdateProfile(cred.user, { displayName: username }); }catch(e){}
+    // E-mail de verificação (necessário, por exemplo, para contas admin).
+    try{ await window.fb.sendEmailVerification(cred.user); }catch(e){}
 
     const tag = String(Math.floor(1000 + Math.random() * 9000));
     const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
@@ -331,7 +398,13 @@ const Api = {
       unlockedFrames: [],
       createdAt: new Date().toISOString()
     };
-    await DB.upsertUser(cred.user.uid, profile);
+    try{
+      await DB.upsertUser(cred.user.uid, profile);
+    }catch(err){
+      await DB.releaseUsername(username.toLowerCase());
+      await window.fb.fbDeleteUser(cred.user).catch(() => {});
+      throw { message: `Não foi possível salvar seu perfil. Tente de novo. Código: ${err.code || 'desconhecido'}.` };
+    }
     return this._publicUser({ id: cred.user.uid, ...profile });
   },
 
@@ -374,7 +447,7 @@ const Api = {
 
     let profile = await DB.getUserById(fbUser.uid);
     if (!profile){
-      const username = (fbUser.displayName || fbUser.email.split('@')[0]).replace(/\s+/g, '').slice(0, 20) || 'Jogador';
+      const username = await this._pickUsername(fbUser.displayName || fbUser.email.split('@')[0], fbUser.uid);
       const tag = String(Math.floor(1000 + Math.random() * 9000));
       const bg = BANNER_COLORS[Math.floor(Math.random() * BANNER_COLORS.length)];
       const newProfile = {
@@ -402,14 +475,12 @@ const Api = {
       throw { field: 'identifier', message: 'Informe seu e-mail ou usuário.' };
     }
 
-    let email = identifier;
+    // Login por nome de usuário foi removido: resolver nome -> e-mail exigiria
+    // deixar a coleção "users" (com e-mails) legível publicamente.
     if (!Utils.isValidEmail(identifier)){
-      const found = await DB.findUserByField('usernameLower', identifier.toLowerCase());
-      if (!found){
-        throw { field: 'identifier', message: 'Não encontramos uma conta com esse e-mail ou usuário.' };
-      }
-      email = found.email;
+      throw { field: 'identifier', message: 'Entre com o e-mail da sua conta.' };
     }
+    const email = identifier;
 
     let cred;
     try{
@@ -449,14 +520,10 @@ const Api = {
   async forgotPassword(identifier){
     identifier = (identifier || '').trim();
     if (!identifier){
-      throw { field: 'identifier', message: 'Informe seu e-mail ou usuário.' };
+      throw { field: 'identifier', message: 'Informe o e-mail da sua conta.' };
     }
 
-    let email = identifier;
-    if (!Utils.isValidEmail(identifier)){
-      const found = await DB.findUserByField('usernameLower', identifier.toLowerCase());
-      email = found ? found.email : null;
-    }
+    const email = Utils.isValidEmail(identifier) ? identifier : null;
 
     if (email){
       try{
@@ -903,8 +970,8 @@ const Api = {
 
     let finalVideoUrl = null;
     if (type === 'video'){
-      videoUrl = (videoUrl || '').trim();
-      if (!/^https?:\/\/.+/i.test(videoUrl)) throw { field: 'video', message: 'Cole um link de vídeo válido (começando com http/https).' };
+      videoUrl = Utils.safeHttpUrl(videoUrl);
+      if (!videoUrl) throw { field: 'video', message: 'Cole um link de vídeo válido (começando com http/https, sem espaços ou aspas).' };
       finalVideoUrl = videoUrl;
     }
 
@@ -1035,7 +1102,9 @@ const Api = {
       throw { field: 'password', message: 'Senha incorreta.' };
     }
 
+    const me = await DB.getUserById(userId);
     await DB.wipeUserData(userId);
+    if (me && me.usernameLower) await DB.releaseUsername(me.usernameLower);
     await DB.deleteUser(userId);
     await window.fb.fbDeleteUser(fbUser);
     return true;

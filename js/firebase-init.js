@@ -31,7 +31,9 @@ import {
   GoogleAuthProvider,
   TwitterAuthProvider,
   signInWithPopup,
-  signInAnonymously
+  signInAnonymously,
+  signInWithCustomToken,
+  sendEmailVerification
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 import {
   getFirestore,
@@ -75,7 +77,9 @@ window.fb = {
   // direto na URL, busca os dados do usuário na API do Discord, e usa
   // signInAnonymously só para ter um uid de sessão do Firebase Auth onde
   // pendurar o perfil no Firestore — sem precisar de backend.
-  signInAnonymously
+  signInAnonymously,
+  signInWithCustomToken,
+  sendEmailVerification
 };
 
 // Avisa o resto do app que o Firebase já está pronto para uso

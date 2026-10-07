@@ -12,27 +12,66 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Perfis: leitura de documento único (get) exige login — usada para
-    // carregar o perfil de alguém já autenticado. Já a leitura em lista
-    // (list) precisa ficar aberta mesmo sem login, porque é o que checa
-    // se um nome de usuário/e-mail já existe DURANTE o cadastro, antes
-    // de o usuário estar autenticado. Limitamos a 1 resultado por query
-    // para não permitir listar/baixar a coleção inteira de perfis.
+    // ---- funções auxiliares ----
+    // Admin = e-mail do dono E e-mail VERIFICADO. Sem a verificação, alguém
+    // poderia criar uma conta e-mail/senha com o e-mail do admin e herdar o
+    // acesso. (Contas Google já vêm verificadas; as de e-mail/senha precisam
+    // clicar no link que o app envia no cadastro.)
+    function isAdmin(){
+      return request.auth != null
+        && request.auth.token.email == 'trajano.neves01@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    // Avatar só pode ser data:image/... ou https://... sem aspas, <, > ou
+    // espaços — evita injetar HTML/atributos (XSS) por esse campo.
+    function validAvatar(a){
+      return a is string && a.size() < 60000
+        && a.matches('(data:image/|https://)[^"\'<> ]*');
+    }
+    function validVideoUrl(u){
+      return u == null || (u is string && u.size() < 500 && u.matches('https?://[^"\'<> ]+'));
+    }
+
+    // Perfis: só o próprio dono lê/escreve o documento (tem e-mail, moedas...).
+    // NÃO existe leitura em lista: antes, "list com limit<=1" deixava qualquer
+    // pessoa varrer a coleção inteira (e baixar todos os e-mails) usando
+    // cursores. A checagem de "nome de usuário livre" agora usa a coleção
+    // pública "usernames", que só guarda { uid }.
     match /users/{uid} {
-      allow get: if request.auth != null;
-      allow list: if request.query.limit <= 1;
-      allow create: if request.auth != null && request.auth.uid == uid;
-      allow update: if request.auth != null && request.auth.uid == uid;
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.coins == 0
+        && validAvatar(request.resource.data.avatar);
+      allow update: if request.auth != null && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['email', 'emailLower', 'username', 'usernameLower', 'tag', 'discordId', 'authProvider', 'createdAt'])
+        && validAvatar(request.resource.data.avatar);
       allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Nomes de usuário: leitura documento a documento (get), qualquer um —
+    // necessário para checar disponibilidade no cadastro. Só se cria uma vez
+    // (não existe update), e só o dono libera o nome.
+    match /usernames/{name} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
     // Comentários: leitura pública, criação exige login e dono correto.
     // Update só é permitido para curtir (campo "likes") OU pelo autor.
     match /comments/{id} {
       allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId
+        && validAvatar(request.resource.data.avatar);
+      // Autor só edita o texto; qualquer logado só mexe em "likes".
       allow update: if request.auth != null && (
-        request.auth.uid == resource.data.userId ||
+        (request.auth.uid == resource.data.userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
       );
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
@@ -47,8 +86,11 @@ service cloud.firestore {
     // Avaliações de produto: leitura pública, escrita só pelo autor.
     match /reviews/{id} {
       allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId
+        && validAvatar(request.resource.data.avatar);
+      allow update: if request.auth != null && request.auth.uid == resource.data.userId
+        && validAvatar(request.resource.data.avatar);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
     // Pedidos: só o dono lê/cria os próprios (tem endereço, é dado sensível).
@@ -86,7 +128,7 @@ service cloud.firestore {
     // navegador, o que seria um vazamento de dados dos seus usuários.
     match /newsletterSubs/{email} {
       allow create: if request.auth != null;
-      allow read: if request.auth != null && request.auth.token.email == 'trajano.neves01@gmail.com';
+      allow read: if isAdmin();
       allow update, delete: if false;
     }
 
@@ -96,8 +138,7 @@ service cloud.firestore {
     // mesmo e-mail usado em ADMIN_EMAILS no js/app.js.
     match /articles/{id} {
       allow read: if true;
-      allow create, update, delete: if request.auth != null
-        && request.auth.token.email == 'trajano.neves01@gmail.com';
+      allow create, update, delete: if isAdmin();
     }
 
     // Trava do seed de conteúdo de demonstração — qualquer um lê,
@@ -123,19 +164,22 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && validVideoUrl(request.resource.data.videoUrl)
+        && validAvatar(request.resource.data.authorAvatar);
       allow update: if request.auth != null && (
         (resource.data.authorId == request.auth.uid
           && resource.data.status == 'pending'
           && request.resource.data.status == 'pending'
-          && request.resource.data.authorId == request.auth.uid) ||
-        request.auth.token.email == 'trajano.neves01@gmail.com' ||
+          && request.resource.data.authorId == request.auth.uid
+          && validVideoUrl(request.resource.data.videoUrl)) ||
+        isAdmin() ||
         (request.auth.uid != resource.data.authorId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes', 'downvotes']))
       );
       allow delete: if request.auth != null && (
         resource.data.authorId == request.auth.uid ||
-        request.auth.token.email == 'trajano.neves01@gmail.com'
+        isAdmin()
       );
     }
   }

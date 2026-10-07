@@ -52,14 +52,18 @@ const DB = {
     const snap = await window.fb.getDoc(this._doc('users', uid));
     return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
-  async findUserByField(field, value){
-    const q = window.fb.query(this._col('users'), window.fb.where(field, '==', value), window.fb.limit(1));
-    const snap = await window.fb.getDocs(q);
-    return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+  /* Nomes de usuário: coleção pública usernames/{nomeEmMinusculas} = { uid }.
+     É lida com get() (um documento por vez), então dá para checar se um nome
+     está livre sem expor a coleção "users" (que tem e-mail, moedas etc.). */
+  async isUsernameTaken(usernameLower){
+    const snap = await window.fb.getDoc(this._doc('usernames', encodeURIComponent(usernameLower)));
+    return snap.exists();
   },
-  async findUserByEmailOrUsername(identifier){
-    const id = String(identifier).trim().toLowerCase();
-    return (await this.findUserByField('emailLower', id)) || (await this.findUserByField('usernameLower', id));
+  async claimUsername(usernameLower, uid){
+    await window.fb.setDoc(this._doc('usernames', encodeURIComponent(usernameLower)), { uid });
+  },
+  async releaseUsername(usernameLower){
+    await window.fb.deleteDoc(this._doc('usernames', encodeURIComponent(usernameLower))).catch(() => {});
   },
   async upsertUser(uid, patch){
     await window.fb.setDoc(this._doc('users', uid), patch, { merge: true });
@@ -264,21 +268,11 @@ const DB = {
 
   // ---- seed de conteúdo de demonstração (roda 1x só, globalmente) ----
   async isSeeded(){
-    try{
-      const snap = await window.fb.getDoc(this._doc('meta', 'seedStatus'));
-      return snap.exists();
-    }catch(err){
-      console.error('[discord-login debug] leitura de meta/seedStatus falhou:', err.code || err.name, err.message);
-      throw err;
-    }
+    const snap = await window.fb.getDoc(this._doc('meta', 'seedStatus'));
+    return snap.exists();
   },
   async markSeeded(){
-    try{
-      await window.fb.setDoc(this._doc('meta', 'seedStatus'), { seeded: true, seededAt: new Date().toISOString() });
-    }catch(err){
-      console.error('[discord-login debug] escrita em meta/seedStatus falhou:', err.code || err.name, err.message);
-      throw err;
-    }
+    await window.fb.setDoc(this._doc('meta', 'seedStatus'), { seeded: true, seededAt: new Date().toISOString() });
   },
 
   /* ==========================================================================

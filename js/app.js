@@ -153,10 +153,7 @@ async function init(){
   try{
     await Api.seedIfNeeded();
   }catch(err){
-    // DEBUG TEMPORÁRIO: antes isso derrubava a init() inteira sem aviso
-    // nenhum (por isso a página "travava" depois do login com Discord —
-    // essa chamada roda ANTES do handleDiscordRedirect, mais abaixo).
-    console.error('[discord-login debug] seedIfNeeded falhou, mas o boot continua:', err.code || err.name, err.message);
+    console.warn('seedIfNeeded falhou, mas o boot continua:', err.code || err.name);
   }
 
   // Se acabamos de voltar do redirect do Discord, isso resolve com o
@@ -398,7 +395,7 @@ function bindAuthEvents(){
     if (v.length < 3) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Muito curto.');
     setFieldState('regUsernameWrap', 'regUsernameHint', 'default', 'Checando disponibilidade...');
     try{
-      const exists = await DB.findUserByField('usernameLower', v.toLowerCase());
+      const exists = await DB.isUsernameTaken(v.toLowerCase());
       if (exists) return setFieldState('regUsernameWrap', 'regUsernameHint', 'error', 'Este usuário já existe.');
       setFieldState('regUsernameWrap', 'regUsernameHint', 'valid', 'Disponível.');
     }catch(err){
@@ -411,15 +408,7 @@ function bindAuthEvents(){
     const v = e.target.value.trim();
     if (!v) return setFieldState('regEmailWrap', 'regEmailHint', 'default', '');
     if (!Utils.isValidEmail(v)) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'E-mail inválido.');
-    setFieldState('regEmailWrap', 'regEmailHint', 'default', 'Checando disponibilidade...');
-    try{
-      const exists = await DB.findUserByField('emailLower', v.toLowerCase());
-      if (exists) return setFieldState('regEmailWrap', 'regEmailHint', 'error', 'Já existe conta com este e-mail.');
-      setFieldState('regEmailWrap', 'regEmailHint', 'valid', 'E-mail válido.');
-    }catch(err){
-      console.error('Erro ao checar e-mail:', err);
-      setFieldState('regEmailWrap', 'regEmailHint', 'default', 'Não foi possível checar agora — tudo bem, checamos de novo ao enviar.');
-    }
+    setFieldState('regEmailWrap', 'regEmailHint', 'valid', 'E-mail válido.');
   }, 400));
 
   $('#regPassword').addEventListener('input', (e) => {
@@ -480,11 +469,11 @@ function bindAuthEvents(){
    ========================================================================== */
 function openForgotPasswordModal(){
   openModal('sm', `
-    <p class="modal-lead">Informe o e-mail ou usuário da sua conta. Se ela existir, enviaremos um link para redefinir a senha.</p>
+    <p class="modal-lead">Informe o e-mail da sua conta. Se ela existir, enviaremos um link para redefinir a senha.</p>
     <p class="modal-lead" style="font-size:12px;color:var(--text-faint);">Não recebeu em alguns minutos? Confira a caixa de spam/lixo eletrônico — e-mails automáticos às vezes caem lá.</p>
     <form id="forgotPasswordForm" novalidate>
       <div class="field">
-        <label for="forgotIdentifier">E-mail ou usuário</label>
+        <label for="forgotIdentifier">E-mail</label>
         <div class="field-input" id="forgotIdentifierWrap">
           <input id="forgotIdentifier" name="identifier" type="text" autocomplete="username" placeholder="voce@email.com">
         </div>
@@ -500,7 +489,7 @@ function openForgotPasswordModal(){
     setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'default', '');
 
     if (!identifier.trim()){
-      setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'error', 'Informe seu e-mail ou usuário.');
+      setFieldState('forgotIdentifierWrap', 'forgotIdentifierHint', 'error', 'Informe o e-mail da sua conta.');
       return;
     }
 
@@ -874,7 +863,7 @@ function filteredArticles(){
    abstrata gerada por categoria (gameArt), mantendo o visual consistente. */
 function articleMedia(article, seed){
   return article.coverImage
-    ? `<img class="article-cover-img" src="${article.coverImage}" alt="" loading="lazy" decoding="async">`
+    ? `<img class="article-cover-img" src="${Utils.safeImg(article.coverImage)}" alt="" loading="lazy" decoding="async">`
     : gameArt(article.category, seed);
 }
 
@@ -942,7 +931,7 @@ async function openArticleModal(id){
       <span class="chip">${catInfo(article.category).label}</span>
       <h2 style="margin-top:12px;">${Utils.escapeHtml(article.title)}</h2>
       <div class="article-meta-row">
-        <span>${Icons.svg('user', 13)} ${article.author}</span>
+        <span>${Icons.svg('user', 13)} ${Utils.escapeHtml(article.author)}</span>
         <span>${Icons.svg('clock', 13)} ${article.readTime} min de leitura</span>
       </div>
       <div class="article-content">${article.content.map(p => `<p>${Utils.escapeHtml(p)}</p>`).join('')}</div>
@@ -1047,7 +1036,7 @@ async function openArticleModal(id){
       const mine = State.user && c.userId === State.user.id;
       return `
       <div class="comment ${isReply ? 'comment--reply' : ''}" data-comment-id="${c.id}">
-        <img class="avatar" src="${c.avatar}" width="${isReply ? 26 : 34}" height="${isReply ? 26 : 34}" alt="" loading="lazy" decoding="async">
+        <img class="avatar" src="${Utils.safeImg(c.avatar)}" width="${isReply ? 26 : 34}" height="${isReply ? 26 : 34}" alt="" loading="lazy" decoding="async">
         <div class="comment__body">
           <div class="comment__head">
             <span class="comment__name">${Utils.escapeHtml(c.username)}</span>
@@ -1146,7 +1135,9 @@ function videoEmbedHtml(post){
   if (yt) return `<div class="video-embed-wrap"><iframe src="https://www.youtube-nocookie.com/embed/${yt}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
   const tw = twitchEmbedSrc(post.videoUrl || '');
   if (tw) return `<div class="video-embed-wrap"><iframe src="${tw}" allowfullscreen></iframe></div>`;
-  return `<a class="btn btn-ghost" href="${post.videoUrl}" target="_blank" rel="noopener noreferrer">${Icons.svg('externalLink', 15)} Assistir no site original</a>`;
+  const safeLink = Utils.safeHttpUrl(post.videoUrl);
+  if (!safeLink) return '';
+  return `<a class="btn btn-ghost" href="${Utils.escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">${Icons.svg('externalLink', 15)} Assistir no site original</a>`;
 }
 
 // Card pequeno usado na tira de "Melhores momentos" (dentro da notícia e
@@ -1433,7 +1424,7 @@ async function openCommunityPostModal(id){
       const mine = State.user && c.userId === State.user.id;
       return `
       <div class="comment" data-comment-id="${c.id}">
-        <img class="avatar" src="${c.avatar}" width="34" height="34" alt="" loading="lazy" decoding="async">
+        <img class="avatar" src="${Utils.safeImg(c.avatar)}" width="34" height="34" alt="" loading="lazy" decoding="async">
         <div class="comment__body">
           <div class="comment__head">
             <span class="comment__name">${Utils.escapeHtml(c.username)}</span>
@@ -2315,7 +2306,7 @@ async function openProductModal(id){
     }
     box.innerHTML = list.map(r => `
       <div class="review-item">
-        <img class="avatar" src="${r.avatar}" width="34" height="34" alt="" loading="lazy" decoding="async">
+        <img class="avatar" src="${Utils.safeImg(r.avatar)}" width="34" height="34" alt="" loading="lazy" decoding="async">
         <div>
           <div class="comment__head">
             <span class="comment__name">${Utils.escapeHtml(r.username)}</span>
@@ -2645,10 +2636,10 @@ function openProfilePanel(initialTab = 'perfil'){
   const u = State.user;
   openModal('lg', `
     <div class="profile-panel">
-      <div class="profile-panel__banner ${u.activeBanner ? 'banner-' + u.activeBanner : ''}" id="panelBanner" style="${u.activeBanner ? '' : (u.bannerImage ? `background-image:url('${u.bannerImage}');background-size:cover;background-position:center;` : `background:${u.banner};`)}"></div>
+      <div class="profile-panel__banner ${u.activeBanner ? 'banner-' + u.activeBanner : ''}" id="panelBanner" style="${u.activeBanner ? '' : (u.bannerImage ? `background-image:url('${Utils.safeImg(u.bannerImage)}');background-size:cover;background-position:center;` : `background:${u.banner};`)}"></div>
       <div class="profile-panel__main">
         <div class="profile-panel__avatar ${u.activeFrame ? 'frame-' + u.activeFrame : ''}">
-          <img class="avatar" src="${u.avatar}" width="84" height="84" alt="">
+          <img class="avatar" src="${Utils.safeImg(u.avatar)}" width="84" height="84" alt="">
         </div>
         <div class="profile-panel__names">
           <div class="name">${Utils.escapeHtml(u.username)}</div>
@@ -2710,7 +2701,7 @@ function refreshProfilePanelChrome(){
   if (bannerEl){
     bannerEl.className = 'profile-panel__banner' + (u.activeBanner ? ' banner-' + u.activeBanner : '');
     if (!u.activeBanner){
-      bannerEl.style.backgroundImage = u.bannerImage ? `url('${u.bannerImage}')` : 'none';
+      bannerEl.style.backgroundImage = u.bannerImage ? `url('${Utils.safeImg(u.bannerImage).replace(/&amp;/g, '&')}')` : 'none';
       bannerEl.style.backgroundSize = 'cover';
       bannerEl.style.backgroundPosition = 'center';
       bannerEl.style.background = u.bannerImage ? '' : u.banner;
@@ -2967,7 +2958,7 @@ function renderProfileTab(tab){
     /* Monta o preview visual de cada tipo de item cosmético */
     const previewHtml = (type, item) => {
       if (type === 'frame'){
-        return `<div class="reward-item__preview"><div class="profile-panel__avatar ${item.cls}"><img class="avatar" src="${u.avatar}" width="84" height="84" alt=""></div></div>`;
+        return `<div class="reward-item__preview"><div class="profile-panel__avatar ${item.cls}"><img class="avatar" src="${Utils.safeImg(u.avatar)}" width="84" height="84" alt=""></div></div>`;
       }
       if (type === 'badge'){
         return `<div class="reward-item__preview"><span class="badge ${item.cls}" style="width:44px;height:44px;">${Icons.svg(item.icon, 19)}</span></div>`;
