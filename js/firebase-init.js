@@ -33,13 +33,14 @@ import {
   signInWithPopup,
   signInAnonymously,
   signInWithCustomToken,
-  sendEmailVerification
+  sendEmailVerification,
+  reauthenticateWithPopup
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
 import {
   getFirestore,
   doc, setDoc, getDoc, updateDoc, deleteDoc,
   collection, addDoc, query, where, orderBy, limit, getDocs,
-  arrayUnion, arrayRemove
+  arrayUnion, arrayRemove, increment
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
 
 // Configuração do projeto "Nexus Arena" no Firebase (console.firebase.google.com)
@@ -65,7 +66,7 @@ window.fb = {
   updatePassword, reauthenticateWithCredential, EmailAuthProvider, fbDeleteUser, sendPasswordResetEmail,
   doc, setDoc, getDoc, updateDoc, deleteDoc,
   collection, addDoc, query, where, orderBy, limit, getDocs,
-  arrayUnion, arrayRemove,
+  arrayUnion, arrayRemove, increment,
   // ---- login social (OAuth2) ----
   signInWithPopup,
   googleProvider: new GoogleAuthProvider(),
@@ -79,7 +80,8 @@ window.fb = {
   // pendurar o perfil no Firestore — sem precisar de backend.
   signInAnonymously,
   signInWithCustomToken,
-  sendEmailVerification
+  sendEmailVerification,
+  reauthenticateWithPopup
 };
 
 // Avisa o resto do app que o Firebase já está pronto para uso

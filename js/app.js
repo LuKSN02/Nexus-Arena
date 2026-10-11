@@ -142,6 +142,27 @@ function bindAccessibilityEvents(){
    ========================================================================== */
 document.addEventListener('DOMContentLoaded', init);
 
+/* Espera o módulo firebase-init.js definir window.fb. Resolve false se o
+   módulo falhou ao carregar (evento/flag 'firebase-failed') ou passou do prazo. */
+function waitForFirebase(timeoutMs = 8000){
+  return new Promise(resolve => {
+    if (window.fb) return resolve(true);
+    if (window.__fbFailed) return resolve(false);
+    let timer;
+    const finish = (ok) => {
+      clearTimeout(timer);
+      window.removeEventListener('firebase-ready', onReady);
+      window.removeEventListener('firebase-failed', onFail);
+      resolve(ok);
+    };
+    const onReady = () => finish(true);
+    const onFail = () => finish(false);
+    window.addEventListener('firebase-ready', onReady);
+    window.addEventListener('firebase-failed', onFail);
+    timer = setTimeout(() => finish(!!window.fb), timeoutMs);
+  });
+}
+
 async function init(){
   Toast.init();
   fillStaticIcons();
@@ -150,10 +171,12 @@ async function init(){
   bindGlobalDelegatedEvents();
   bindAccessibilityEvents();
 
-  try{
-    await Api.seedIfNeeded();
-  }catch(err){
-    console.warn('seedIfNeeded falhou, mas o boot continua:', err.code || err.name);
+  // Sem o SDK do Firebase (CDN bloqueada, offline, extensão de bloqueio...)
+  // nada de login funciona — avisa em vez de quebrar em silêncio.
+  if (!(await waitForFirebase())){
+    showFormAlert('#authAlert', 'Não foi possível carregar o Firebase (conexão ou bloqueador de conteúdo). Verifique sua internet, desative bloqueadores para este site e recarregue a página.');
+    $all('#authScreen button[type="submit"], .btn-social').forEach(b => { b.disabled = true; });
+    return;
   }
 
   // Se acabamos de voltar do redirect do Discord, isso resolve com o
@@ -236,18 +259,48 @@ async function enterApp(){
   buildTicker();
   navigateTo('home');
   renderCartDrawer();
-  State.wishlist = await Api.getWishlist(cartOwnerKey());
+  // As quatro leituras são independentes: em paralelo, em vez de uma após a outra.
+  const key = cartOwnerKey();
+  [State.wishlist, State.bookmarks, State.seasonPass, State.notifications] = await Promise.all([
+    Api.getWishlist(key),
+    Api.getBookmarks(key),
+    Api.getSeasonPass(key),
+    Api.getNotifications(key)
+  ]);
   renderWishlistBadge();
-  State.bookmarks = await Api.getBookmarks(cartOwnerKey());
-  State.seasonPass = await Api.getSeasonPass(cartOwnerKey());
   updateSeasonPassChip();
-  State.notifications = await Api.getNotifications(cartOwnerKey());
   renderNotifBadge();
+  Api.ensureUsernameClaim(State.user); // contas antigas passam a reservar o nome
 
-  const sharedArticleId = new URLSearchParams(location.search).get('article');
-  if (sharedArticleId) openArticleModal(sharedArticleId);
+  const params = new URLSearchParams(location.search);
+  const sharedArticleId = params.get('article');
+  if (sharedArticleId){
+    // limpa o parâmetro para um F5 não reabrir a notícia
+    params.delete('article');
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+    openArticleModal(sharedArticleId);
+  }
 
   await claimDailyBonusIfAvailable();
+  retryPendingOrderRewards();
+}
+
+/* Pedidos cujo crédito de recompensas falhou (rede/servidor) são tentados de
+   novo aqui — o Worker é idempotente, então repetir não duplica nada. */
+async function retryPendingOrderRewards(){
+  if (!State.user) return;
+  try{
+    const orders = await Api.getOrderHistory(cartOwnerKey());
+    const pending = orders.filter(o => !o.rewardsGranted).slice(0, 5); // o Worker ignora pedidos antigos
+    for (const o of pending){
+      const r = await Api.claimOrderRewards(o.docId);
+      if (r.already) continue;
+      State.user = { ...State.user, ...r.user };
+      State.seasonPass = r.pass;
+      updateCoinChip(); updateSeasonPassChip();
+    }
+  }catch(err){ console.warn('Reenvio de recompensas:', err && err.code); }
 }
 
 /* Roda uma vez por sessão iniciada (login ou F5 com sessão já ativa).
@@ -260,12 +313,12 @@ async function claimDailyBonusIfAvailable(){
     if (!result.claimed) return;
 
     State.user.coins = result.coins;
+    if (result.pass){ State.seasonPass = result.pass; updateSeasonPassChip(); }
     updateProfileChip();
 
     const streakMsg = result.streak > 1 ? ` (sequência de ${result.streak} dias)` : '';
     Toast.show(`+${result.amount} moedas Nexus — bônus diário${streakMsg}!`, 'success', 'diamond');
     await pushNotification('order', 'Bônus diário resgatado', `Você recebeu ${result.amount} moedas Nexus só por logar hoje${streakMsg}.`);
-    await grantSeasonXp(50);
   }catch(err){
     console.error('Erro ao resgatar bônus diário:', err);
   }
@@ -723,6 +776,7 @@ async function renderHomeView(){
                 <input id="newsletterEmail" type="email" placeholder="seu@email.com" aria-label="E-mail para newsletter">
               </div>
               <div class="field-hint" id="newsletterHint"></div>
+              <p style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;">Ao se inscrever você concorda com a <a href="privacy.html" target="_blank" rel="noopener" class="link-accent">Política de Privacidade</a>. Para cancelar, escreva para o contato no rodapé.</p>
               <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">Inscrever-se</button>
             </form>
           </div>
@@ -774,11 +828,16 @@ function bindNewsletterForm(){
     const btn = form.querySelector('button[type="submit"]');
     btn.disabled = true; btn.textContent = 'Inscrevendo...';
     try{
-      await Api.subscribeNewsletter(email);
-      setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Inscrito! Fique de olho na sua caixa de entrada.');
-      form.reset();
-      Toast.show('Inscrição na newsletter confirmada.', 'success', 'mail');
-      await pushNotification('newsletter', 'Inscrição na newsletter', `O e-mail ${email} foi inscrito para receber o resumo semanal de notícias.`);
+      const status = await Api.subscribeNewsletter(email);
+      if (status === 'already'){
+        setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Esse e-mail já está inscrito.');
+      } else if (status === 'wait'){
+        setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Já enviamos um e-mail de confirmação há pouco. Confira a caixa de entrada (e o spam).');
+      } else {
+        setFieldState('newsletterWrap', 'newsletterHint', 'valid', 'Quase lá! Enviamos um e-mail — clique no link para confirmar a inscrição.');
+        form.reset();
+        Toast.show('Confirme a inscrição pelo link enviado ao seu e-mail.', 'success', 'mail');
+      }
     }catch(err){
       setFieldState('newsletterWrap', 'newsletterHint', 'error', err.message || 'Não foi possível concluir a inscrição.');
     }finally{
@@ -808,7 +867,7 @@ function renderHeroCarousel(slides){
         <p>${Utils.escapeHtml(a.excerpt)}</p>
         <div class="hero-meta">
           <span>${Icons.svg('clock', 13)} ${a.readTime} min de leitura</span>
-          <span>${Icons.svg('heart', 13)} ${a.likes}</span>
+          <span>${Icons.svg('heart', 13)} ${a.likeCount ?? a.likes}</span>
           <span>${Icons.svg('comment', 13)} ${a.comments}</span>
         </div>
         <button class="btn btn-primary" style="margin-top:18px;" data-open-article="${a.id}">Ler matéria completa ${Icons.svg('arrowRight', 15)}</button>
@@ -861,6 +920,14 @@ function filteredArticles(){
 /* Notícias reais cadastradas pelo admin podem ter uma imagem de capa de
    verdade; sem ela (ou nas notícias de demonstração), cai na arte SVG
    abstrata gerada por categoria (gameArt), mantendo o visual consistente. */
+/* Mantém o contador de comentários dos cards em dia sem recarregar tudo. */
+function bumpLocalCommentCount(articleId, delta){
+  const a = State.articles.find(x => x.id === articleId);
+  if (!a) return;
+  a.comments = Math.max(0, (a.comments || 0) + delta);
+  if ($('#articleGrid')) renderArticleGrid();
+}
+
 function articleMedia(article, seed){
   return article.coverImage
     ? `<img class="article-cover-img" src="${Utils.safeImg(article.coverImage)}" alt="" loading="lazy" decoding="async">`
@@ -916,6 +983,15 @@ function renderArticleGrid(){
    ARTIGO — MODAL + COMENTÁRIOS
    ========================================================================== */
 async function openArticleModal(id){
+  try{
+    await openArticleModalUnsafe(id);
+  }catch(err){
+    console.error('Erro ao abrir notícia:', err);
+    Toast.show((err && err.message) || 'Não foi possível abrir essa notícia.', 'error');
+  }
+}
+
+async function openArticleModalUnsafe(id){
   const article = await Api.getArticle(id);
   const comments = await Api.getComments(id);
   const likeIds = await DB.getArticleLikeIds(id);
@@ -986,7 +1062,7 @@ async function openArticleModal(id){
     $('#articleLikeBtn').setAttribute('aria-pressed', String(res.liked));
     $('#articleLikeCount').textContent = article.likes + res.count;
     renderArticleGrid();
-    if (res.liked) await grantSeasonXp(10);
+    if (res.liked) await grantSeasonXp('like');
   });
 
   $('#articleShareBtn').addEventListener('click', () => openShareSheet(id));
@@ -1010,6 +1086,7 @@ async function openArticleModal(id){
       submitBtn.disabled = true;
       try{
         await Api.addComment(id, State.user, text);
+        bumpLocalCommentCount(id, 1);
         $('#commentInput').value = '';
         const fresh = await Api.getComments(id);
         renderCommentList(fresh);
@@ -1032,7 +1109,7 @@ async function openArticleModal(id){
     }
 
     const commentHtml = (c, isReply) => {
-      const likedByMe = State.user && c.likes.includes(State.user.id);
+      const likedByMe = State.user && (c.likes || []).includes(State.user.id);
       const mine = State.user && c.userId === State.user.id;
       return `
       <div class="comment ${isReply ? 'comment--reply' : ''}" data-comment-id="${c.id}">
@@ -1044,7 +1121,7 @@ async function openArticleModal(id){
           </div>
           <p class="comment__text">${Utils.escapeHtml(c.text)}</p>
           <div class="comment__actions">
-            <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${c.likes.length}</button>
+            <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${(c.likes || []).length}</button>
             ${!isReply ? `<button data-reply-to="${c.id}">${Icons.svg('comment', 13)} Responder</button>` : ''}
             ${mine ? `<button data-delete-comment="${c.id}">${Icons.svg('trash', 13)} Remover</button>` : ''}
           </div>
@@ -1079,6 +1156,7 @@ async function openArticleModal(id){
       b.disabled = true;
       try{
         await Api.addComment(id, State.user, input.value, parentId);
+        bumpLocalCommentCount(id, 1);
         const fresh = await Api.getComments(id);
         renderCommentList(fresh);
         $('#commentCount').textContent = fresh.length;
@@ -1098,6 +1176,7 @@ async function openArticleModal(id){
     }));
     $all('[data-delete-comment]').forEach(b => b.addEventListener('click', async () => {
       await Api.deleteComment(b.dataset.deleteComment, State.user.id);
+      bumpLocalCommentCount(id, -1);
       const fresh = await Api.getComments(id);
       renderCommentList(fresh);
       $('#commentCount').textContent = fresh.length;
@@ -1420,7 +1499,7 @@ async function openCommunityPostModal(id){
       return;
     }
     box.innerHTML = list.map(c => {
-      const likedByMe = State.user && c.likes.includes(State.user.id);
+      const likedByMe = State.user && (c.likes || []).includes(State.user.id);
       const mine = State.user && c.userId === State.user.id;
       return `
       <div class="comment" data-comment-id="${c.id}">
@@ -1432,7 +1511,7 @@ async function openCommunityPostModal(id){
           </div>
           <p class="comment__text">${Utils.escapeHtml(c.text)}</p>
           <div class="comment__actions">
-            <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${c.likes.length}</button>
+            <button data-like-comment="${c.id}" class="${likedByMe ? 'liked' : ''}">${Icons.svg('heart', 13)} ${(c.likes || []).length}</button>
             ${mine ? `<button data-delete-comment="${c.id}">${Icons.svg('trash', 13)} Remover</button>` : ''}
           </div>
         </div>
@@ -1588,7 +1667,7 @@ async function openShareSheet(articleId){
   const nativeBtn = $('#shareNativeBtn', overlay);
   if (nativeBtn){
     nativeBtn.addEventListener('click', async () => {
-      try{ await navigator.share({ title: article.title, text: article.excerpt, url: shareUrl }); closeSheet(); await grantSeasonXp(15); }
+      try{ await navigator.share({ title: article.title, text: article.excerpt, url: shareUrl }); closeSheet(); await grantSeasonXp('share'); }
       catch(err){ /* usuário cancelou o compartilhamento — não é um erro */ }
     });
   }
@@ -1598,7 +1677,7 @@ async function openShareSheet(articleId){
       try{
         await navigator.clipboard.writeText(shareUrl);
         Toast.show('Link copiado para a área de transferência.', 'success', 'link');
-        await grantSeasonXp(15);
+        await grantSeasonXp('share');
       }catch(err){
         Toast.show('Não foi possível copiar o link.', 'error');
       }
@@ -1947,16 +2026,21 @@ async function toggleBookmark(articleId){
     b.classList.toggle('active', res.bookmarked);
     b.setAttribute('aria-pressed', String(res.bookmarked));
   });
-  if (res.bookmarked) await grantSeasonXp(10);
+  if (res.bookmarked) await grantSeasonXp('bookmark');
   return res;
 }
 
 /* ============================================================================
    PASSE DE BATALHA (temporada ativa em BATTLE_PASS_SEASON, ver data.js)
    ========================================================================== */
-async function grantSeasonXp(amount){
+/* kind: 'like' | 'share' | 'bookmark'. O valor e o teto diário são do servidor;
+   se ele falhar, o XP simplesmente não é creditado (a ação do usuário continua). */
+async function grantSeasonXp(kind){
   if (!State.user) return;
-  const { pass, leveledUp } = await Api.grantSeasonXp(cartOwnerKey(), amount);
+  let r;
+  try{ r = await Api.grantSeasonXp(cartOwnerKey(), kind); }
+  catch(err){ console.warn('XP não creditado:', err && err.code); return; }
+  const { pass, leveledUp } = r;
   State.seasonPass = pass;
   updateSeasonPassChip();
   if (leveledUp){
@@ -2196,6 +2280,15 @@ function starsRow(rating, size = 14){
 }
 
 async function openProductModal(id){
+  try{
+    await openProductModalUnsafe(id);
+  }catch(err){
+    console.error('Erro ao abrir produto:', err);
+    Toast.show((err && err.message) || 'Não foi possível abrir esse produto.', 'error');
+  }
+}
+
+async function openProductModalUnsafe(id){
   const product = await Api.getProduct(id);
   const reviews = await Api.getReviews(id);
   const c = PRODUCT_CATS.find(pc => pc.key === product.category);
@@ -2552,49 +2645,29 @@ async function submitOrder(){
     renderCartDrawer();
     await pushNotification('order', 'Pedido confirmado', `Pedido #${order.id} no valor de ${Utils.brl(order.total)} foi confirmado.`, { orderId: order.id });
     if (State.user){
-      const patch = {};
-      const newBadges = new Set(State.user.badges);
-      let gainedBuyer = false, gainedPass = false, coinsGained = 0;
-
-      if (!newBadges.has('buyer')){
-        newBadges.add('buyer');
-        gainedBuyer = true;
-      }
-
-      const coinItem = items.find(i => i.productId === 'p9');
-      if (coinItem){
-        coinsGained = coinItem.qty * 5000;
-        patch.coins = (State.user.coins || 0) + coinsGained;
-      }
-
-      const passItem = items.find(i => i.productId === 'p8');
-      if (passItem && !newBadges.has('season-pass')){
-        newBadges.add('season-pass');
-        gainedPass = true;
-        const unlocked = new Set(State.user.unlockedFrames || []);
-        unlocked.add('cyber');
-        patch.unlockedFrames = [...unlocked];
-        patch.activeFrame = 'cyber';
-        State.seasonPass = await Api.activateSeasonPremium(State.user.id);
-        updateSeasonPassChip();
-      }
-
-      if (gainedBuyer || gainedPass) patch.badges = [...newBadges];
-
-      if (Object.keys(patch).length){
-        State.user = await Api.updateProfile(State.user.id, patch);
+      // Moedas, passe, emblema e XP do pedido são creditados pelo servidor
+      // (idempotente: o pedido é marcado como já creditado).
+      try{
+        const r = await Api.claimOrderRewards(order.docId);
+        State.user = { ...State.user, ...r.user };
+        State.seasonPass = r.pass;
         updateCoinChip();
-        if (gainedBuyer){
-          await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
+        updateSeasonPassChip();
+        if (!r.already){
+          if (r.gainedBuyer){
+            await pushNotification('badge', 'Novo emblema conquistado', 'Você ganhou o emblema "Comprador verificado" pela sua primeira compra.');
+          }
+          if (r.coinsGained){
+            await pushNotification('order', 'Moedas creditadas', `${r.coinsGained.toLocaleString('pt-BR')} moedas Nexus foram adicionadas ao seu saldo.`);
+          }
+          if (r.gainedPass){
+            await pushNotification('badge', 'Passe de Batalha ativado', 'Sua trilha premium no Passe de Batalha já está liberada — resgate as recompensas dos níveis que você já alcançou.');
+          }
         }
-        if (coinsGained){
-          await pushNotification('order', 'Moedas creditadas', `${coinsGained.toLocaleString('pt-BR')} moedas Nexus foram adicionadas ao seu saldo.`);
-        }
-        if (gainedPass){
-          await pushNotification('badge', 'Passe de Batalha ativado', 'Sua trilha premium no Passe de Batalha já está liberada — resgate as recompensas dos níveis que você já alcançou.');
-        }
+      }catch(err){
+        console.error('Recompensas do pedido não creditadas:', err);
+        Toast.show('Pedido feito, mas não conseguimos creditar as recompensas agora. Vamos tentar de novo na próxima vez que você abrir o app.', 'warn');
       }
-      await grantSeasonXp(40);
     }
     renderOrderSuccessView(order);
     Toast.show('Pedido realizado com sucesso!', 'success', 'checkCircle');
@@ -2739,13 +2812,13 @@ async function unlockReward(type, key){
     return;
   }
 
-  const patch = { coins: coins - item.cost };
-  const unlocked = new Set(u[cfg.unlockedField] || []);
-  unlocked.add(key);
-  patch[cfg.unlockedField] = [...unlocked];
-  if (cfg.activeField) patch[cfg.activeField] = key; // já equipa o item recém-desbloqueado
-
-  State.user = await Api.updateProfile(u.id, patch);
+  try{
+    const view = await Api.unlockReward(type, key); // o servidor confere preço e saldo
+    State.user = { ...u, ...view };
+  }catch(err){
+    Toast.show(err.message || 'Não foi possível desbloquear esse item.', 'error');
+    return;
+  }
   updateCoinChip();
   refreshProfilePanelChrome();
   renderProfileTab('recompensas');
@@ -3037,6 +3110,9 @@ function renderProfileTab(tab){
       b.addEventListener('click', () => equipReward(type, key === '__none__' ? null : key));
     });
   } else if (tab === 'config'){
+    const authMethod = Api.getAuthMethod();
+    const isPwd = authMethod === 'password';
+    const providerName = { google: 'Google', x: 'X', other: 'Discord' }[authMethod];
     box.innerHTML = `
       <div class="field">
         <label>Nome de usuário</label>
@@ -3048,7 +3124,8 @@ function renderProfileTab(tab){
       </div>
       <div class="panel-divider"></div>
       <h4 style="font-size:12px;color:var(--text-faint);letter-spacing:.1em;margin-bottom:12px;">ALTERAR SENHA</h4>
-      <form id="changePwdForm">
+      ${isPwd ? '' : `<p style="font-size:12.5px;color:var(--text-faint);">Sua conta entra por ${providerName}: a senha é gerenciada por esse serviço.</p>`}
+      <form id="changePwdForm" class="${isPwd ? '' : 'hidden'}">
         <div class="field">
           <label>Senha atual</label>
           <div class="field-input" id="curPwdWrap"><input id="curPwd" type="password"></div>
@@ -3074,11 +3151,13 @@ function renderProfileTab(tab){
           <label>Digite EXCLUIR para confirmar</label>
           <div class="field-input"><input id="deleteConfirmText" placeholder="EXCLUIR"></div>
         </div>
-        <div class="field">
+        <div class="field ${isPwd ? '' : 'hidden'}">
           <label>Confirme sua senha</label>
           <div class="field-input" id="deletePwdWrap"><input id="deletePwd" type="password"></div>
           <div class="field-hint" id="deletePwdHint"></div>
         </div>
+        ${authMethod === 'google' || authMethod === 'x' ? `<p style="font-size:12.5px;color:var(--text-faint);margin-bottom:10px;">Uma janela do ${providerName} vai abrir para confirmar que é você.</p>` : ''}
+        ${authMethod === 'other' ? `<p style="font-size:12.5px;color:var(--text-faint);margin-bottom:10px;">Por segurança, a exclusão só funciona logo após entrar: se você entrou há mais de 4 minutos, saia, entre de novo pelo Discord e repita.</p>` : ''}
         <button class="btn btn-primary btn-block" id="confirmDeleteAccountBtn" style="background:var(--signal);" disabled>Excluir permanentemente</button>
       </div>
       <div class="panel-divider"></div>
@@ -3140,7 +3219,7 @@ function renderProfileTab(tab){
     });
 
     const checkDeleteReady = () => {
-      const ready = $('#deleteConfirmText').value.trim().toUpperCase() === 'EXCLUIR' && $('#deletePwd').value.length > 0;
+      const ready = $('#deleteConfirmText').value.trim().toUpperCase() === 'EXCLUIR' && (!isPwd || $('#deletePwd').value.length > 0);
       $('#confirmDeleteAccountBtn').disabled = !ready;
     };
     $('#deleteConfirmText').addEventListener('input', checkDeleteReady);
@@ -3150,7 +3229,7 @@ function renderProfileTab(tab){
       const btn = $('#confirmDeleteAccountBtn');
       btn.disabled = true; btn.textContent = 'Excluindo...';
       try{
-        await Api.deleteAccount(u.id, $('#deletePwd').value);
+        await Api.deleteAccount(u.id, isPwd ? $('#deletePwd').value : '');
         State.user = null;
         State.cart = [];
         State.wishlist = [];
@@ -3162,7 +3241,8 @@ function renderProfileTab(tab){
         Toast.show('Sua conta foi excluída.', 'info', 'trash');
         showAuthScreen();
       }catch(err){
-        setFieldState('deletePwdWrap', 'deletePwdHint', 'error', err.message || 'Não foi possível excluir a conta.');
+        if (isPwd) setFieldState('deletePwdWrap', 'deletePwdHint', 'error', err.message || 'Não foi possível excluir a conta.');
+        else Toast.show(err.message || 'Não foi possível excluir a conta.', 'error');
         btn.disabled = false; btn.textContent = 'Excluir permanentemente';
       }
     });

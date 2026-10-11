@@ -51,9 +51,22 @@ const NewsletterAdmin = {
      entre envios (o free tier do EmailJS tem limite de requisições por
      segundo). onProgress(sent, total) é chamado a cada envio, para a UI
      mostrar uma barra de progresso. */
+  /* Rodapé com o link de cancelamento (rota do Worker, protegida por token). */
+  _footer(sub){
+    const bytes = new TextEncoder().encode(String(sub.email).toLowerCase());
+    let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); });
+    const e = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const link = `${WORKER_URL}/newsletter/unsubscribe?e=${e}&t=${encodeURIComponent(sub.unsubToken)}`;
+    return `<hr style="border:none;border-top:1px solid #ddd;margin:24px 0 12px">`
+      + `<p style="font-size:12px;color:#777">Você recebe este e-mail porque se inscreveu na newsletter da Nexus Arena. `
+      + `<a href="${link}">Cancelar inscrição</a></p>`;
+  },
+
   async sendBlast(subject, bodyHtml, onProgress){
     await this._ensureSdk();
-    const subs = await DB.getAllNewsletterSubs();
+    // Só quem CONFIRMOU pelo e-mail (tem unsubToken) recebe. Inscrições antigas,
+    // feitas antes da confirmação em duas etapas, ficam de fora até confirmarem.
+    const subs = (await DB.getAllNewsletterSubs()).filter(x => x && x.unsubToken);
     if (!subs.length) return { sent: 0, failed: 0, total: 0 };
 
     let sent = 0, failed = 0;
@@ -62,7 +75,7 @@ const NewsletterAdmin = {
         await window.emailjs.send(this.EMAILJS_SERVICE_ID, this.EMAILJS_TEMPLATE_ID, {
           to_email: subs[i].email,
           subject,
-          body: bodyHtml
+          body: bodyHtml + this._footer(subs[i])
         });
         sent++;
       }catch(err){

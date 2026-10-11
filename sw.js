@@ -11,7 +11,7 @@
    disco (file://). Veja o README para como rodar um servidor local.
    ========================================================================== */
 
-const CACHE_VERSION = 'nexus-arena-v14';
+const CACHE_VERSION = 'nexus-arena-v16';
 
 const APP_SHELL = [
   './',
@@ -24,21 +24,24 @@ const APP_SHELL = [
   './js/db.js',
   './js/data.js',
   './js/api.js',
-  './js/app.js',
   './js/newsletter-admin.js',
+  './js/app.js',
   './assets/favicon-32.png',
   './assets/favicon-16.png',
   './assets/apple-touch-icon.png',
   './assets/icon-192.png',
   './assets/icon-512.png',
   './assets/icon-64.png',
+  './privacy.html',
+  './terms.html',
   './offline.html'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => cache.addAll(APP_SHELL))
+      // cache: 'reload' ignora o cache HTTP do navegador — garante arquivos novos
+      .then((cache) => cache.addAll(APP_SHELL.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -55,9 +58,19 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  // Fontes do Google Fonts: network-first (não bloqueia o app se offline, mas
-  // busca versão atualizada quando há conexão).
-  if (req.url.includes('fonts.googleapis.com') || req.url.includes('fonts.gstatic.com')){
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
+  const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+  // SDK do Firebase: URLs com versão fixa (imutáveis) — pode ser cache-first.
+  const isFirebaseSdk = url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/');
+
+  // Todo o resto (Firestore, Discord, Worker, EmailJS, ViaCEP...) vai direto
+  // para a rede: o service worker não deve interferir em chamadas de API,
+  // nem trocar uma resposta de API por uma página HTML offline.
+  if (!sameOrigin && !isFont && !isFirebaseSdk) return;
+
+  // Fontes: network-first (não bloqueia offline, atualiza quando há conexão).
+  if (isFont){
     event.respondWith(
       fetch(req).then((res) => {
         const clone = res.clone();
@@ -68,17 +81,52 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell: cache-first, com atualização silenciosa em segundo plano.
+  // SDK do Firebase: cache-first, guarda a 1ª resposta boa. Assim o app abre
+  // offline depois da primeira visita.
+  if (isFirebaseSdk){
+    event.respondWith(
+      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+        if (res && res.ok){
+          const clone = res.clone();
+          caches.open(CACHE_VERSION).then((cache) => cache.put(req, clone));
+        }
+        return res;
+      }))
+    );
+    return;
+  }
+
+  // Navegação (abrir página): rede primeiro; offline cai no index em cache.
+  if (req.mode === 'navigate'){
+    event.respondWith(
+      fetch(req).then((res) => {
+        const isRoot = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+        if (res && res.ok && isRoot){
+          const clone = res.clone();
+          caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', clone));
+        }
+        return res;
+      }).catch(() =>
+        caches.match(req, { ignoreSearch: true })
+          .then((c) => c || caches.match('./index.html'))
+          .then((c) => c || caches.match('./offline.html'))
+      )
+    );
+    return;
+  }
+
+  // Demais arquivos do site (JS, CSS, imagens): usa o cache na hora e
+  // atualiza em segundo plano. ignoreSearch: as URLs do HTML trazem ?v=...,
+  // mas o cache guarda a versão sem query — sem isso nunca dava "acerto".
   event.respondWith(
-    caches.match(req).then((cached) => {
+    caches.match(req, { ignoreSearch: true }).then((cached) => {
       const networkFetch = fetch(req).then((res) => {
         if (res && res.status === 200 && res.type === 'basic'){
           const clone = res.clone();
           caches.open(CACHE_VERSION).then((cache) => cache.put(req, clone));
         }
         return res;
-      }).catch(() => cached || caches.match('./offline.html'));
-
+      }).catch(() => cached);
       return cached || networkFetch;
     })
   );

@@ -28,23 +28,39 @@ service cloud.firestore {
       return a is string && a.size() < 60000
         && a.matches('(data:image/|https://)[^"\'<> ]*');
     }
+    // Equipar item cosmético: só se o campo mudou para null ou para algo que o
+    // dono já desbloqueou (lista que só o Worker escreve).
+    function equipOk(field, listField){
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field])
+        || request.resource.data.get(field, null) == null
+        || request.resource.data.get(field, null) in resource.data.get(listField, []);
+    }
     function validVideoUrl(u){
       return u == null || (u is string && u.size() < 500 && u.matches('https?://[^"\'<> ]+'));
     }
 
-    // Perfis: só o próprio dono lê/escreve o documento (tem e-mail, moedas...).
-    // NÃO existe leitura em lista: antes, "list com limit<=1" deixava qualquer
-    // pessoa varrer a coleção inteira (e baixar todos os e-mails) usando
-    // cursores. A checagem de "nome de usuário livre" agora usa a coleção
-    // pública "usernames", que só guarda { uid }.
+    // Perfis: só o próprio dono lê o documento (tem e-mail, moedas...).
+    // ECONOMIA: moedas, emblemas, itens desbloqueados, bônus diário e sequência
+    // só o Worker (conta de serviço, que ignora estas regras) escreve. O
+    // navegador só pode equipar o que já está desbloqueado.
+    // NÃO existe leitura em lista (evita varrer todos os e-mails); a checagem
+    // de "nome livre" usa a coleção pública "usernames".
     match /users/{uid} {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.coins == 0
+        && request.resource.data.get('badges', []).toSet().hasOnly(['founder'])
+        && request.resource.data.get('unlockedFrames', []).size() == 0
+        && request.resource.data.get('activeFrame', null) == null
+        && !request.resource.data.keys().hasAny(['unlockedBanners', 'unlockedTitles', 'activeBanner', 'activeTitle', 'lastDailyBonus', 'dailyStreak'])
         && validAvatar(request.resource.data.avatar);
       allow update: if request.auth != null && request.auth.uid == uid
         && !request.resource.data.diff(resource.data).affectedKeys()
-             .hasAny(['email', 'emailLower', 'username', 'usernameLower', 'tag', 'discordId', 'authProvider', 'createdAt'])
+             .hasAny(['email', 'emailLower', 'username', 'usernameLower', 'tag', 'discordId', 'authProvider', 'createdAt',
+                      'coins', 'badges', 'unlockedFrames', 'unlockedBanners', 'unlockedTitles', 'lastDailyBonus', 'dailyStreak'])
+        && equipOk('activeFrame', 'unlockedFrames')
+        && equipOk('activeBanner', 'unlockedBanners')
+        && equipOk('activeTitle', 'unlockedTitles')
         && validAvatar(request.resource.data.avatar);
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
@@ -78,9 +94,31 @@ service cloud.firestore {
     }
 
     // Curtidas de notícia — documento por artigo, só o array de uids.
+    // Cada pessoa só pode adicionar OU remover o PRÓPRIO uid do array
+    // (antes, qualquer logado podia apagar todas as curtidas ou forjar uids).
     match /articleLikes/{articleId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['userIds'])
+        && request.resource.data.userIds.toSet().hasOnly([request.auth.uid]);
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['userIds'])
+        && request.resource.data.userIds.toSet().difference(resource.data.userIds.toSet()).hasOnly([request.auth.uid])
+        && resource.data.userIds.toSet().difference(request.resource.data.userIds.toSet()).hasOnly([request.auth.uid]);
+      allow delete: if false;
+    }
+
+    // Contador de comentários por notícia: só muda de 1 em 1.
+    match /articleStats/{articleId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['commentCount'])
+        && request.resource.data.commentCount == 1;
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['commentCount'])
+        && request.resource.data.commentCount >= 0
+        && (request.resource.data.commentCount - resource.data.get('commentCount', 0) in [-1, 1]);
+      allow delete: if false;
     }
 
     // Avaliações de produto: leitura pública, escrita só pelo autor.
@@ -96,7 +134,11 @@ service cloud.firestore {
     // Pedidos: só o dono lê/cria os próprios (tem endereço, é dado sensível).
     match /orders/{id} {
       allow read: if request.auth != null && request.auth.uid == resource.data.ownerKey;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerKey;
+      // paymentStatus/rewardsGranted só o servidor escreve (não há regra de update).
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerKey
+        && !request.resource.data.keys().hasAny(['rewardsGranted', 'paymentStatus']);
+      // Excluir a própria conta apaga também os pedidos (ver Api.deleteAccount).
+      allow delete: if request.auth != null && request.auth.uid == resource.data.ownerKey;
     }
 
     // Carrinho e lista de desejos: doc ID = uid do dono.
@@ -109,8 +151,11 @@ service cloud.firestore {
     match /bookmarks/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+    // Passe de Batalha: XP, nível e resgates são do Worker; o dono só lê (e
+    // apaga ao excluir a conta).
     match /seasonPasses/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if false;
     }
 
     // Notificações: só o dono lê/edita as próprias.
@@ -118,18 +163,20 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == resource.data.ownerKey;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerKey;
       allow update: if request.auth != null && request.auth.uid == resource.data.ownerKey;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.ownerKey;
     }
 
-    // Newsletter: qualquer usuário logado pode se inscrever (create). A
-    // LEITURA da lista completa de e-mails é restrita ao(s) admin(s) da
-    // Nexus Arena — troque o e-mail abaixo pelo mesmo que está em
-    // ADMIN_EMAILS no js/app.js. Sem isso, qualquer usuário logado
-    // conseguiria ler a lista de e-mails inscritos pelo console do
-    // navegador, o que seria um vazamento de dados dos seus usuários.
+    // Newsletter com confirmação por e-mail (double opt-in): o navegador NÃO
+    // escreve aqui. A inscrição pendente vive em "newsletterPending" (sem
+    // acesso do cliente) e o Worker só cria o documento em "newsletterSubs"
+    // quando a pessoa clica no link do e-mail. Leitura/remoção: só o admin
+    // (o disparo em massa precisa da lista e do token de cancelamento).
     match /newsletterSubs/{email} {
-      allow create: if request.auth != null;
-      allow read: if isAdmin();
-      allow update, delete: if false;
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
+    }
+    match /newsletterPending/{email} {
+      allow read, write: if false;
     }
 
     // Notícias reais cadastradas pelo admin (as de demonstração ficam no
@@ -139,14 +186,6 @@ service cloud.firestore {
     match /articles/{id} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
-    }
-
-    // Trava do seed de conteúdo de demonstração — qualquer um lê,
-    // ninguém além do próprio app cria (roda 1x só).
-    match /meta/{docId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if false;
     }
 
     // Central da Comunidade: posts de notícia/vídeo enviados por usuários.

@@ -11,7 +11,7 @@ Basta abrir `index.html` no navegador (duplo clique) **ou**, para evitar
 qualquer restrição de `file://` no seu navegador, subir um servidor local:
 
 ```bash
-cd esports-hub
+cd Nexus-Arena
 python3 -m http.server 8080
 # depois acesse http://localhost:8080
 ```
@@ -23,14 +23,14 @@ seção **Backend real: Firebase** abaixo.
 ## Estrutura de arquivos
 
 ```
-esports-hub/
+Nexus-Arena/
 ├── index.html          # Shell da página: tela de login/cadastro, layout do app,
 │                        # drawer do carrinho e modal genérico
 ├── style.css            # Todos os tokens de design (cor, tipografia, espaçamento)
 │                        # e estilos de componentes
 ├── firestore.rules       # Regras de segurança do Firestore (cole no console)
 ├── firebase.json         # Configuração de deploy (Hosting + regras do Firestore)
-├── .firebaserc            # ID do seu projeto Firebase (edite antes de publicar)
+
 ├── js/
 │   ├── firebase-init.js  # Único arquivo que importa o SDK do Firebase; expõe
 │   │                      # tudo que o resto do app precisa em window.fb
@@ -155,7 +155,8 @@ termina de carregar (a partir de `init()`, em `app.js`).
 | `carts` | `{uid}` | `{ items: [{productId, qty}] }` |
 | `wishlists` | `{uid}` | `{ productIds: [...] }` |
 | `notifications` | auto ID | com `ownerKey` = uid do dono |
-| `newsletterSubs` | `{email}` | inscrição na newsletter |
+| `newsletterSubs` | `{email, subscribedAt, confirmedAt, unsubToken}` | inscrição CONFIRMADA (só o Worker escreve) |
+| `newsletterPending` | `{email, token, createdAt}` | aguardando clique no e-mail (só o Worker acessa) |
 | `meta` | `seedStatus` | trava para o conteúdo de demonstração rodar 1x só |
 
 ### O que mudou de comportamento
@@ -191,34 +192,20 @@ termina de carregar (a partir de `init()`, em `app.js`).
 - `console.firebase.google.com` cobra por leitura/escrita/armazenamento
   acima do free tier (Spark) — de olho no uso se o tráfego crescer.
 
-### Publicar no Firebase Hosting
+### Publicar
 
-O projeto já vem com `firebase.json` e `.firebaserc` prontos — a raiz da
-pasta É o site (não há build step), então publicar é direto:
+O site em produção está no **GitHub Pages** (`https://luksn02.github.io/Nexus-Arena/`):
+basta enviar os arquivos para o repositório. As **regras do Firestore** não sobem
+pelo GitHub — copie o conteúdo de `firestore.rules` e publique em
+Firebase Console → Firestore → Regras. O login com Discord depende do Worker em
+`server/nexus-worker.js` (veja o cabeçalho do arquivo).
 
-1. Instale a CLI (uma vez só, globalmente):
-   ```bash
-   npm install -g firebase-tools
-   ```
-2. Faça login (abre o navegador para autenticar):
-   ```bash
-   firebase login
-   ```
-3. Edite `.firebaserc` e troque `"SEU-PROJECT-ID"` pelo ID do seu projeto
-   (o mesmo que você já usou em `firebaseConfig`, em `js/firebase-init.js`
-   — aparece em **Configurações do projeto** no console).
-4. Publique, de dentro da pasta `esports-hub/`:
-   ```bash
-   firebase deploy
-   ```
-   Isso sobe o site (Hosting) **e** as regras do Firestore (`firestore.rules`)
-   de uma vez. Se quiser publicar só um dos dois:
-   ```bash
-   firebase deploy --only hosting
-   firebase deploy --only firestore:rules
-   ```
-5. O site fica em `https://SEU-PROJECT-ID.web.app` (e também em
-   `https://SEU-PROJECT-ID.firebaseapp.com`).
+Se preferir o Firebase Hosting, rode `firebase init` (escolha Hosting + Firestore,
+pasta pública `.`) para gerar o `.firebaserc` e depois:
+
+```bash
+firebase deploy
+```
 
 Rodando em `https://`, o Service Worker (`sw.js`) passa a registrar de
 verdade — diferente de abrir o `index.html` direto do disco (`file://`),
@@ -380,6 +367,32 @@ interface.
   no console.** Contas antigas não têm doc em `usernames`: rode um backfill
   (um doc por usuário existente) se quiser reservar os nomes já usados.
 - Login por nome de usuário foi removido (só e-mail). Admin exige e-mail verificado.
-- Login Discord persistente: publique `server/discord-token-worker.js` e preencha
+- Login Discord persistente: publique `server/nexus-worker.js` e preencha
   `DISCORD_TOKEN_ENDPOINT` em `js/api.js` (instruções no topo do arquivo).
 - EmailJS: no painel, restrinja "Allowed domains" ao seu domínio.
+
+
+## Servidor (Cloudflare Worker): economia e newsletter
+
+`server/nexus-worker.js` é a única peça de backend (plano grátis da Cloudflare,
+sem Blaze). Rotas: login Discord, `/economy/*` (bônus diário, XP, recompensas do
+Passe, loja de recompensas, crédito de pedidos) e `/newsletter/*` (inscrição com
+confirmação por e-mail, confirmar, cancelar). O navegador só **pede** a ação com
+o ID token do Firebase; o Worker valida e grava no Firestore com a conta de
+serviço. As regras (`firestore.rules`) impedem o navegador de escrever moedas,
+emblemas, itens, passe e inscritos.
+
+**Segredos** (Settings → Variables and Secrets → tipo *Secret*): `FIREBASE_CLIENT_EMAIL`,
+`FIREBASE_PRIVATE_KEY`, `EMAILJS_PRIVATE_KEY`.
+**Variáveis** (texto): `DISCORD_CLIENT_ID`, `ALLOWED_ORIGIN`, `FIREBASE_PROJECT_ID`,
+`SITE_URL`, `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`,
+`ORDERS_CUTOFF` (data/hora ISO em que você publicou o Worker; pedidos anteriores
+não são creditados de novo).
+
+Se mudar preços/recompensas em `js/data.js`, rode `node server/gen-catalog.js` e
+cole o resultado no `CATALOG` do Worker.
+
+**Limite conhecido:** o checkout da loja é simulado (não há gateway de pagamento).
+Quem edita o pedido no console consegue "comprar" pacote de moedas sem pagar. A
+correção real é um gateway (Mercado Pago/Stripe) cujo webhook marca
+`paymentStatus: 'paid'` no pedido; aí defina `REQUIRE_PAYMENT=1` no Worker.

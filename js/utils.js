@@ -54,11 +54,6 @@ const Utils = {
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
   },
 
-  /* Simula latência de rede da "API" — deixa a experiência full-stack coerente */
-  delay(ms = 380){
-    return new Promise(res => setTimeout(res, ms));
-  },
-
   isValidEmail(email){
     return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email).trim());
   },
@@ -74,18 +69,6 @@ const Utils = {
     const score = Object.values(checks).filter(Boolean).length;
     const labels = ['Muito fraca', 'Fraca', 'Razoável', 'Boa', 'Forte'];
     return { score, label: labels[score], checks };
-  },
-
-  /* Hash simples (NÃO criptográfico) — mantido apenas por compatibilidade
-     histórica. Não é mais usado: com o Firebase Auth conectado, a senha
-     nunca passa por aqui nem é validada no front-end; o Firebase cuida
-     disso no servidor dele. */
-  simpleHash(str){
-    let h = 0;
-    for (let i = 0; i < str.length; i++){
-      h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
-    }
-    return `h${Math.abs(h)}_${str.length}`;
   },
 
   initials(name = ''){

@@ -119,6 +119,25 @@ const DB = {
     }, { merge: true });
   },
 
+  /* Contagens agregadas: UMA leitura por coleção (em vez de uma por notícia).
+     articleLikes/{id} -> { userIds }   |   articleStats/{id} -> { commentCount } */
+  async getAllArticleLikeCounts(){
+    const snap = await window.fb.getDocs(this._col('articleLikes'));
+    const map = {};
+    snap.docs.forEach(d => { map[d.id] = (d.data().userIds || []).length; });
+    return map;
+  },
+  async getAllArticleCommentCounts(){
+    const snap = await window.fb.getDocs(this._col('articleStats'));
+    const map = {};
+    snap.docs.forEach(d => { map[d.id] = Math.max(0, d.data().commentCount || 0); });
+    return map;
+  },
+  async bumpCommentCount(articleId, delta){
+    if (!articleId) return;
+    await window.fb.setDoc(this._doc('articleStats', articleId), { commentCount: window.fb.increment(delta) }, { merge: true });
+  },
+
   // ---- notícias cadastradas pelo admin (além das estáticas de data.js) ----
   async getArticles(){
     const snap = await window.fb.getDocs(this._col('articles'));
@@ -173,9 +192,6 @@ const DB = {
     const snap = await window.fb.getDoc(this._doc('seasonPasses', ownerKey));
     return snap.exists() ? snap.data() : null;
   },
-  async saveSeasonPass(ownerKey, data){
-    await window.fb.setDoc(this._doc('seasonPasses', ownerKey), data, { merge: true });
-  },
 
   // ---- avaliações de produtos ----
   async getReviewsByProduct(productId){
@@ -215,12 +231,6 @@ const DB = {
   },
 
   // ---- newsletter ----
-  async addNewsletterSub(email){
-    await window.fb.setDoc(this._doc('newsletterSubs', encodeURIComponent(email)), {
-      email, subscribedAt: new Date().toISOString()
-    }, { merge: true });
-  },
-
   /* Usado pelo painel admin (NewsletterAdmin) para disparar o blast real. */
   async getAllNewsletterSubs(){
     const snap = await window.fb.getDocs(window.fb.collection(window.fb.firestore, 'newsletterSubs'));
@@ -256,23 +266,31 @@ const DB = {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
 
-  // ---- exclusão de conta: limpa tudo vinculado ao uid ----
-  async wipeUserData(uid){
-    await window.fb.deleteDoc(this._doc('carts', uid)).catch(() => {});
-    await window.fb.deleteDoc(this._doc('wishlists', uid)).catch(() => {});
-    await window.fb.deleteDoc(this._doc('bookmarks', uid)).catch(() => {});
-    await window.fb.deleteDoc(this._doc('seasonPasses', uid)).catch(() => {});
-    const notifs = await this.getNotifications(uid);
-    await Promise.all(notifs.map(n => window.fb.deleteDoc(this._doc('notifications', n.id)).catch(() => {})));
-  },
+  // ---- exclusão de conta: apaga TUDO que pertence ao uid ----
+  // Usa allSettled: uma falha isolada não impede apagar o resto; as falhas
+  // são devolvidas para a UI decidir o que mostrar.
+  async deleteAllUserContent(uid){
+    const failures = [];
+    const track = (label, p) => p.catch(err => { failures.push({ label, code: err && err.code }); });
 
-  // ---- seed de conteúdo de demonstração (roda 1x só, globalmente) ----
-  async isSeeded(){
-    const snap = await window.fb.getDoc(this._doc('meta', 'seedStatus'));
-    return snap.exists();
-  },
-  async markSeeded(){
-    await window.fb.setDoc(this._doc('meta', 'seedStatus'), { seeded: true, seededAt: new Date().toISOString() });
+    const [comments, reviews, orders, posts, notifs] = await Promise.all([
+      this.getCommentsByUser(uid).catch(() => []),
+      this.getReviewsByUser(uid).catch(() => []),
+      this.getOrdersByOwner(uid).catch(() => []),
+      this.getCommunityPostsByAuthor(uid).catch(() => []),
+      this.getNotifications(uid).catch(() => [])
+    ]);
+
+    const jobs = [];
+    comments.forEach(c => jobs.push(track('comment', this.deleteComment(c.id).then(() => this.bumpCommentCount(c.articleId, -1).catch(() => {})))));
+    reviews.forEach(r => jobs.push(track('review', this.deleteReview(r.id))));
+    orders.forEach(o => jobs.push(track('order', window.fb.deleteDoc(this._doc('orders', o.id)))));
+    posts.forEach(p => jobs.push(track('post', this.deleteCommunityPost(p.id))));
+    notifs.forEach(n => jobs.push(track('notification', window.fb.deleteDoc(this._doc('notifications', n.id)))));
+    ['carts', 'wishlists', 'bookmarks', 'seasonPasses'].forEach(col =>
+      jobs.push(track(col, window.fb.deleteDoc(this._doc(col, uid)))));
+    await Promise.all(jobs);
+    return failures;
   },
 
   /* ==========================================================================

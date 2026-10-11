@@ -46,10 +46,52 @@ const DISCORD_SCOPE = 'identify email';
 /* URL do Worker que troca o access_token do Discord por um Firebase Custom
    Token com uid ESTÁVEL (discord_<id>) — assim a conta sobrevive a logout,
    outro aparelho ou limpeza do navegador. Código pronto em
-   server/discord-token-worker.js (Cloudflare Workers, plano grátis, não exige
+   server/nexus-worker.js (Cloudflare Workers, plano grátis, não exige
    Blaze). Enquanto estiver vazio, o app usa o modo antigo (sessão anônima por
    navegador), que PERDE a conta ao sair. */
 const DISCORD_TOKEN_ENDPOINT = 'https://nexus-discord-auth.trajano-neves01.workers.dev';
+/* O mesmo Worker também faz a economia (moedas/XP/recompensas) e a newsletter. */
+const WORKER_URL = DISCORD_TOKEN_ENDPOINT;
+
+const WORKER_ERRORS = {
+  auth: 'Sua sessão expirou. Entre novamente.',
+  user: 'Usuário não encontrado.',
+  level: 'Você ainda não alcançou esse nível.',
+  premium: 'Essa recompensa é exclusiva de quem tem o Passe de Batalha.',
+  claimed: 'Recompensa já resgatada.',
+  reward: 'Não há recompensa nesse nível.',
+  coins: 'Você não tem moedas Nexus suficientes.',
+  owned: 'Você já desbloqueou esse item.',
+  item: 'Item indisponível.',
+  email: 'Informe um e-mail válido.',
+  unpaid: 'Pedido ainda não confirmado como pago.',
+  busy: 'Servidor ocupado, tente de novo em instantes.',
+  origin: 'Origem não autorizada.'
+};
+
+/* Chama uma rota do Worker com o ID token do Firebase. Lança { message, code }. */
+async function workerCall(path, body = {}){
+  const user = window.fb && window.fb.auth && window.fb.auth.currentUser;
+  if (!user) throw { code: 'auth', message: WORKER_ERRORS.auth };
+  let res;
+  try{
+    const token = await user.getIdToken();
+    res = await fetch(WORKER_URL + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(body)
+    });
+  }catch(e){
+    throw { code: 'network', message: 'Sem conexão com o servidor. Tente novamente.' };
+  }
+  let data = null;
+  try{ data = await res.json(); }catch(e){}
+  if (!res.ok){
+    const code = data && data.error || 'server';
+    throw { code, message: WORKER_ERRORS[code] || 'Não foi possível concluir a ação agora.' };
+  }
+  return data;
+}
 
 // Tenta de novo (com uma pequena espera) quando o Firestore recusa por
 // "permission-denied" — usado logo após qualquer login novo, porque às
@@ -249,70 +291,6 @@ const Api = {
       return null;
     }
     return this._publicUser(profile);
-  },
-
-  /* -------------------- seed inicial (roda 1x só, globalmente) -------------------- */
-  async seedIfNeeded(){
-    if (await DB.isSeeded()) return;
-
-    const seedAuthors = [
-      { name: 'RedShift', bg: '#ff3b5c' },
-      { name: 'Kaelen', bg: '#2fd9c7' },
-      { name: 'Vhex', bg: '#ffb93d' },
-      { name: 'Nyra', bg: '#3fa9ff' }
-    ];
-    let firstComment = null;
-    for (let i = 0; i < 4; i++){
-      const articleId = ['n1', 'n2', 'n3', 'n4'][i];
-      const a = seedAuthors[i % seedAuthors.length];
-      const saved = await DB.addComment({
-        articleId,
-        parentId: null,
-        userId: 'system',
-        username: a.name,
-        avatar: Utils.avatarDataUri(a.name, a.bg),
-        text: i % 2 === 0
-          ? 'Já esperava essa movimentação, faz sentido com o que vinha rolando nos bastidores.'
-          : 'Curioso pra ver como isso muda o meta nas próximas semanas.',
-        createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 6).toISOString(),
-        likes: []
-      });
-      if (i === 0) firstComment = saved;
-    }
-    if (firstComment){
-      await DB.addComment({
-        articleId: firstComment.articleId,
-        parentId: firstComment.id,
-        userId: 'system',
-        username: 'Nyra',
-        avatar: Utils.avatarDataUri('Nyra', '#3fa9ff'),
-        text: 'Concordo, dava pra ver isso vindo desde a última janela de transferências.',
-        createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-        likes: []
-      });
-    }
-
-    const reviews = [
-      { productId: 'p1', name: 'RedShift', bg: '#ff3b5c', rating: 5, text: 'Sensor extremamente preciso, uso há 3 meses em jogos competitivos e não travou uma vez.' },
-      { productId: 'p1', name: 'Vhex', bg: '#ffb93d', rating: 4, text: 'Ótimo mouse, só achei o cabo um pouco rígido no começo, mas depois amacia.' },
-      { productId: 'p3', name: 'Kaelen', bg: '#2fd9c7', rating: 5, text: 'Som do switch é viciante e o hot-swap facilitou muito trocar pra um switch mais silencioso.' },
-      { productId: 'p5', name: 'Nyra', bg: '#3fa9ff', rating: 4, text: 'Áudio posicional ajudou bastante a identificar passos em jogos táticos.' }
-    ];
-    for (let i = 0; i < reviews.length; i++){
-      const r = reviews[i];
-      await DB.upsertReview(null, {
-        productId: r.productId,
-        userId: 'system',
-        username: r.name,
-        avatar: Utils.avatarDataUri(r.name, r.bg),
-        rating: r.rating,
-        text: r.text,
-        verified: true,
-        createdAt: new Date(Date.now() - (i + 1) * 3600 * 1000 * 30).toISOString()
-      });
-    }
-
-    await DB.markSeeded();
   },
 
   /* ============================== AUTH ============================== */
@@ -562,28 +540,9 @@ const Api = {
      ========================================================================== */
   DAILY_BONUS_AMOUNT: 15,
 
+  /* O servidor decide (dia de calendário de São Paulo, valor, sequência). */
   async claimDailyBonus(userId){
-    const profile = await DB.getUserById(userId);
-    if (!profile) throw { message: 'Usuário não encontrado.' };
-
-    const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, fuso do navegador
-    if (profile.lastDailyBonus === todayKey){
-      return { claimed: false, amount: 0, coins: profile.coins || 0, nextAt: null };
-    }
-
-    // Sequência de dias consecutivos (opcional, só para exibir "streak" na UI —
-    // não altera o valor da recompensa, mantendo o economy cap intacto).
-    const yesterdayKey = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const streak = profile.lastDailyBonus === yesterdayKey ? (profile.dailyStreak || 0) + 1 : 1;
-
-    const newCoins = (profile.coins || 0) + this.DAILY_BONUS_AMOUNT;
-    await DB.upsertUser(userId, {
-      coins: newCoins,
-      lastDailyBonus: todayKey,
-      dailyStreak: streak
-    });
-
-    return { claimed: true, amount: this.DAILY_BONUS_AMOUNT, coins: newCoins, streak };
+    return workerCall('/economy/daily');
   },
 
   onAuthReady(){
@@ -608,7 +567,32 @@ const Api = {
     return rest;
   },
 
+  /* Como a sessão atual foi criada: 'password' | 'google' | 'x' | 'other'
+     (Discord e sessões anônimas caem em 'other'). */
+  getAuthMethod(){
+    const u = window.fb.auth.currentUser;
+    const id = u && u.providerData && u.providerData[0] && u.providerData[0].providerId;
+    if (id === 'password') return 'password';
+    if (id === 'google.com') return 'google';
+    if (id === 'twitter.com') return 'x';
+    return 'other';
+  },
+
+  /* Garante que o nome de usuário da conta esteja reservado em usernames/.
+     Contas criadas antes da coleção existir ganham a reserva no próximo login
+     (se o nome ainda estiver livre). Silencioso: nunca quebra o boot. */
+  async ensureUsernameClaim(user){
+    try{
+      if (!user || !user.username) return;
+      const lower = user.username.toLowerCase();
+      if (!(await DB.isUsernameTaken(lower))) await DB.claimUsername(lower, user.id);
+    }catch(e){ /* sem permissão ou offline: tenta de novo no próximo login */ }
+  },
+
   async changePassword(userId, currentPassword, newPassword){
+    if (this.getAuthMethod() !== 'password'){
+      throw { message: 'Sua conta entra por Google, X ou Discord — a senha é gerenciada por esse serviço.' };
+    }
     const strength = Utils.passwordStrength(newPassword);
     if (strength.score < 2){
       throw { field: 'new', message: 'A nova senha é muito fraca.' };
@@ -629,15 +613,21 @@ const Api = {
   /* ============================== NOTÍCIAS ============================== */
 
   async getNews(category){
-    const custom = await DB.getArticles();
+    const [custom, likeCounts, commentCounts] = await Promise.all([
+      DB.getArticles(),
+      DB.getAllArticleLikeCounts().catch(() => ({})),
+      DB.getAllArticleCommentCounts().catch(() => ({}))
+    ]);
     const merged = [
       ...custom.map(a => ({ ...a, isCustom: true })),
       ...NEWS.map(n => ({ ...n, isCustom: false }))
     ].sort((a, b) => (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0));
     const list = merged.filter(n => !category || category === 'todos' || n.category === category);
-    return Promise.all(list.map(async n => {
-      const likeIds = await DB.getArticleLikeIds(n.id);
-      return { ...n, likeCount: (n.likes || 0) + likeIds.length };
+    // Curtidas e comentários dos usuários somam aos números base da notícia.
+    return list.map(n => ({
+      ...n,
+      likeCount: (n.likes || 0) + (likeCounts[n.id] || 0),
+      comments: (n.comments || 0) + (commentCounts[n.id] || 0)
     }));
   },
 
@@ -688,8 +678,10 @@ const Api = {
     if (!Utils.isValidEmail(email)){
       throw { message: 'Informe um e-mail válido.' };
     }
-    await DB.addNewsletterSub(email);
-    return true;
+    // Double opt-in: o servidor manda um e-mail de confirmação; só entra na
+    // lista quando a pessoa clica no link. Devolve 'sent' | 'wait' | 'already'.
+    const r = await workerCall('/newsletter/subscribe', { email });
+    return r.status;
   },
 
   async getArticle(id){
@@ -720,7 +712,7 @@ const Api = {
     text = text.trim();
     if (!text) throw { message: 'Escreva algo antes de comentar.' };
     if (text.length > 500) throw { message: 'Comentário muito longo (máx. 500 caracteres).' };
-    return DB.addComment({
+    const saved = await DB.addComment({
       articleId,
       parentId: parentId || null,
       userId: user.id,
@@ -730,14 +722,17 @@ const Api = {
       createdAt: new Date().toISOString(),
       likes: []
     });
+    DB.bumpCommentCount(articleId, 1).catch(() => {});
+    return saved;
   },
 
   async toggleCommentLike(commentId, userId){
     const c = await DB.getCommentById(commentId);
     if (!c) throw { message: 'Comentário não encontrado.' };
-    const has = c.likes.includes(userId);
+    const likes = c.likes || [];
+    const has = likes.includes(userId);
     await DB.toggleCommentLike(commentId, userId, !has);
-    return { liked: !has, count: has ? c.likes.length - 1 : c.likes.length + 1 };
+    return { liked: !has, count: has ? likes.length - 1 : likes.length + 1 };
   },
 
   async deleteComment(commentId, userId){
@@ -745,6 +740,7 @@ const Api = {
     if (!c) throw { message: 'Comentário não encontrado.' };
     if (c.userId !== userId) throw { message: 'Você só pode remover seus próprios comentários.' };
     await DB.deleteComment(commentId);
+    DB.bumpCommentCount(c.articleId, -1).catch(() => {});
     return true;
   },
 
@@ -773,13 +769,13 @@ const Api = {
     const orderNumber = Utils.uid('order').toUpperCase();
     const record = await DB.addOrder({ ownerKey, orderNumber, ...order, createdAt: new Date().toISOString() });
     await DB.saveCart(ownerKey, []);
-    return { ...record, id: orderNumber };
+    return { ...record, id: orderNumber, docId: record.id };
   },
 
   async getOrderHistory(ownerKey){
     const list = await DB.getOrdersByOwner(ownerKey);
     return list
-      .map(o => ({ ...o, id: o.orderNumber || o.id }))
+      .map(o => ({ ...o, docId: o.id, id: o.orderNumber || o.id }))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
 
@@ -815,54 +811,37 @@ const Api = {
   },
 
   /* ---------------- passe de batalha ---------------- */
+  /* Só leitura: o documento do passe é escrito pelo Worker. Sem documento (ou
+     de temporada antiga) devolve um passe zerado em memória. */
   async getSeasonPass(ownerKey){
     return withPermissionRetry(async () => {
       const season = BATTLE_PASS_SEASON;
-      let pass = await DB.getSeasonPass(ownerKey);
+      const pass = await DB.getSeasonPass(ownerKey);
       if (!pass || pass.seasonId !== season.id){
-        pass = { seasonId: season.id, xp: 0, level: 1, hasPremium: false, claimedFree: [], claimedPremium: [] };
-        await DB.saveSeasonPass(ownerKey, pass);
+        return { seasonId: season.id, xp: 0, level: 1, hasPremium: false, claimedFree: [], claimedPremium: [] };
       }
-      return pass;
+      return { claimedFree: [], claimedPremium: [], ...pass };
     });
   },
 
-  async grantSeasonXp(ownerKey, amount){
-    const season = BATTLE_PASS_SEASON;
-    const pass = await this.getSeasonPass(ownerKey);
-    pass.xp += amount;
-    const newLevel = Math.min(season.maxLevel, 1 + Math.floor(pass.xp / season.xpPerLevel));
-    const leveledUp = newLevel > pass.level;
-    pass.level = newLevel;
-    await DB.saveSeasonPass(ownerKey, pass);
-    return { pass, leveledUp };
+  /* kind: 'like' | 'share' | 'bookmark' — o valor de XP e o teto diário são do servidor. */
+  async grantSeasonXp(ownerKey, kind){
+    const r = await workerCall('/economy/xp', { kind });
+    return { pass: r.pass, leveledUp: !!r.leveledUp };
   },
 
   async claimSeasonReward(ownerKey, level, track){
-    const season = BATTLE_PASS_SEASON;
-    const pass = await this.getSeasonPass(ownerKey);
-    if (pass.level < level) throw { message: 'Você ainda não alcançou esse nível.' };
-    if (track === 'premium' && !pass.hasPremium) throw { message: 'Essa recompensa é exclusiva de quem tem o Passe de Batalha.' };
-    const claimedField = track === 'free' ? 'claimedFree' : 'claimedPremium';
-    if (pass[claimedField].includes(level)) throw { message: 'Recompensa já resgatada.' };
-    const reward = season.rewards[track][level];
-    if (!reward) throw { message: 'Não há recompensa nesse nível.' };
-
-    const profile = await DB.getUserById(ownerKey);
-    const coins = (profile.coins || 0) + reward.amount;
-    await DB.upsertUser(ownerKey, { coins });
-    pass[claimedField].push(level);
-    await DB.saveSeasonPass(ownerKey, pass);
-    return { pass, reward, coins };
+    return workerCall('/economy/claim', { level, track });
   },
 
-  async activateSeasonPremium(ownerKey){
-    const pass = await this.getSeasonPass(ownerKey);
-    if (!pass.hasPremium){
-      pass.hasPremium = true;
-      await DB.saveSeasonPass(ownerKey, pass);
-    }
-    return pass;
+  /* Compra um item da Loja de Recompensas; devolve os campos de economia do perfil. */
+  async unlockReward(type, key){
+    return workerCall('/economy/unlock', { type, key });
+  },
+
+  /* Credita moedas/passe/emblema do pedido (idempotente no servidor). */
+  async claimOrderRewards(orderDocId){
+    return workerCall('/economy/order-rewards', { orderId: orderDocId });
   },
 
   /* ---------------- avaliações de produtos ---------------- */
@@ -1095,18 +1074,48 @@ const Api = {
     const fbUser = window.fb.auth.currentUser;
     if (!fbUser) throw { message: 'Sessão expirada. Entre novamente.' };
 
+    // 1) Confirma a identidade ANTES de apagar qualquer coisa (se isso falhar,
+    //    nada foi tocado). O método depende de como a pessoa entra.
+    const method = this.getAuthMethod();
     try{
-      const cred = window.fb.EmailAuthProvider.credential(fbUser.email, password);
-      await window.fb.reauthenticateWithCredential(fbUser, cred);
+      if (method === 'password'){
+        const cred = window.fb.EmailAuthProvider.credential(fbUser.email, password);
+        await window.fb.reauthenticateWithCredential(fbUser, cred);
+      } else if (method === 'google' || method === 'x'){
+        await window.fb.reauthenticateWithPopup(fbUser, method === 'google' ? window.fb.googleProvider : window.fb.twitterProvider);
+      } else {
+        // Discord/sessão personalizada: não há como reautenticar sem refazer o
+        // login. O Firebase só aceita excluir a conta com login recente.
+        const last = Date.parse(fbUser.metadata && fbUser.metadata.lastSignInTime) || 0;
+        if (Date.now() - last > 4 * 60 * 1000){
+          throw { code: 'na/stale' };
+        }
+      }
     }catch(err){
-      throw { field: 'password', message: 'Senha incorreta.' };
+      if (err && err.code === 'na/stale'){
+        throw { message: 'Por segurança, saia da conta, entre de novo pelo Discord e peça a exclusão logo em seguida (em até 4 minutos).' };
+      }
+      if (method === 'password') throw { field: 'password', message: 'Senha incorreta.' };
+      if (err && (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')){
+        throw { message: 'Confirmação cancelada. Nada foi excluído.' };
+      }
+      throw { message: 'Não foi possível confirmar sua identidade. Nada foi excluído.' };
     }
 
+    // 2) Apaga tudo que pertence à conta (comentários, avaliações, pedidos,
+    //    posts, notificações, carrinho...), libera o nome de usuário e só
+    //    então o perfil e o login.
     const me = await DB.getUserById(userId);
-    await DB.wipeUserData(userId);
+    const failures = await DB.deleteAllUserContent(userId);
+    if (failures.length) console.warn('Exclusão de conta: itens que não puderam ser apagados', failures);
     if (me && me.usernameLower) await DB.releaseUsername(me.usernameLower);
     await DB.deleteUser(userId);
-    await window.fb.fbDeleteUser(fbUser);
+
+    try{
+      await window.fb.fbDeleteUser(fbUser);
+    }catch(err){
+      throw { message: 'Seus dados foram apagados, mas não foi possível remover o login. Entre de novo e repita a exclusão.' };
+    }
     return true;
   }
 };
