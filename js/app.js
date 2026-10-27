@@ -168,6 +168,7 @@ async function init(){
   fillStaticIcons();
   bindAuthEvents();
   bindShellEvents();
+  setupMobileNav();
   bindGlobalDelegatedEvents();
   bindAccessibilityEvents();
 
@@ -562,6 +563,76 @@ function openForgotPasswordModal(){
 /* ============================================================================
    SHELL: navbar, ticker, busca, carrinho, perfil
    ========================================================================== */
+/* ----------------------------------------------------------------------------
+   NAVBAR MOBILE/TABLET — em telas <= 1140px não cabem 9 itens numa linha só (carrinho,
+   perfil e notificações eram cortados fora da tela, e a busca não tinha
+   acesso). Aqui a barra fica só com ☰ · marca · moedas · carrinho · perfil, e
+   busca, notificações, favoritos e passe de batalha vão para dentro do menu.
+   Os MESMOS elementos são movidos (não clonados), então os eventos e os
+   contadores continuam funcionando; no desktop eles voltam para o lugar.
+   ---------------------------------------------------------------------------- */
+function setupMobileNav(){
+  const navLinks = $('#navLinks');
+  const menuBtn = $('#mobileMenuBtn');
+  if (!navLinks || !menuBtn) return;
+
+  const mq = window.matchMedia('(max-width:1140px)'); // mesmo breakpoint do CSS (navbar compacta)
+  const nodes = ['searchBoxWrap', 'passChipBtn', 'notifBtn', 'wishlistBtn']
+    .map(id => document.getElementById(id)).filter(Boolean);
+
+  // marcador que guarda a posição original de cada item na barra (desktop)
+  const slots = new Map();
+  nodes.forEach(el => {
+    const slot = document.createComment('nav-slot');
+    el.parentNode.insertBefore(slot, el);
+    slots.set(el, slot);
+  });
+
+  const closeMenu = () => {
+    navLinks.classList.remove('mobile-open');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  const sync = () => {
+    if (mq.matches){
+      let extras = navLinks.querySelector('.nav-extras');
+      if (!extras){
+        extras = document.createElement('div');
+        extras.className = 'nav-extras';
+        navLinks.appendChild(extras);
+      }
+      nodes.forEach(el => { if (el.parentNode !== extras) extras.appendChild(el); });
+    } else {
+      nodes.forEach(el => {
+        const slot = slots.get(el);
+        if (slot && slot.parentNode && el.previousSibling !== slot) slot.after(el);
+      });
+      closeMenu();
+    }
+  };
+  sync();
+  if (mq.addEventListener) mq.addEventListener('change', sync); else mq.addListener(sync);
+
+  // tocar em notificações/favoritos/passe abre o modal e fecha o menu
+  navLinks.addEventListener('click', (e) => {
+    if (e.target.closest('#notifBtn, #wishlistBtn, #passChipBtn')) closeMenu();
+  });
+  // tocar fora do menu fecha
+  document.addEventListener('click', (e) => {
+    if (!navLinks.classList.contains('mobile-open')) return;
+    if (navLinks.contains(e.target) || menuBtn.contains(e.target)) return;
+    closeMenu();
+  });
+
+  // notificações novas ficam escondidas dentro do menu: mostra um ponto no ☰
+  const notifCount = $('#notifCount');
+  if (notifCount){
+    const updateDot = () => menuBtn.classList.toggle('has-alert', !notifCount.classList.contains('hidden'));
+    new MutationObserver(updateDot).observe(notifCount, { attributes: true, attributeFilter: ['class'] });
+    updateDot();
+  }
+}
+
 function bindShellEvents(){
   $('#brandHomeBtn').addEventListener('click', () => {
     navigateTo('home');

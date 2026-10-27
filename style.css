@@ -1452,3 +1452,72 @@ svg:not(.icon):not(.gfx){ max-width:100%; height:auto; } /* ícones da UI (class
   .auth-topbar{ padding:2px 0 8px; }
   .auth-footer{ padding-top:10px; }
 }
+
+
+/* ==========================================================================
+   NAVBAR MOBILE/TABLET (refeita) — <= 1140px (compacta <= 760px)
+   --------------------------------------------------------------------------
+   Barra: ☰ · marca · (espaço) · moedas · carrinho · perfil.
+   Menu (abre embaixo da barra, preso a ela): navegação + busca +
+   notificações + favoritos + passe de batalha (movidos por setupMobileNav()).
+   O menu agora é position:absolute relativo à navbar (antes era fixed com um
+   top calculado na mão, que desalinhava ao rolar a página ou quando a barra
+   quebrava de linha).
+   ========================================================================== */
+@media (max-width:1140px){
+  .navbar{ flex-wrap:nowrap; }
+  .hamburger{ display:flex; }
+  .nav-links, .search-box{ display:none; }
+  .navbar__spacer{ flex:1 1 auto; min-width:0; }
+  .brand{ min-width:0; }
+  .brand__name{ white-space:nowrap; }
+
+  /* ponto de aviso no ☰ quando há notificação nova dentro do menu */
+  .hamburger.has-alert::after{
+    content:''; position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%;
+    background:var(--signal); border:2px solid var(--bg);
+  }
+
+  /* painel do menu */
+  .nav-links.mobile-open{
+    display:flex; flex-direction:column; align-items:stretch; gap:4px;
+    position:absolute; top:100%; left:0; right:0; z-index:99;
+    padding:12px; background:var(--surface); border-bottom:1px solid var(--border);
+    box-shadow:0 18px 40px rgba(0,0,0,.55);
+    max-height:calc(100vh - var(--nav-h) - 12px); max-height:calc(100dvh - var(--nav-h) - 12px);
+    overflow-y:auto; overscroll-behavior:contain;
+  }
+  .nav-links.mobile-open .nav-link{
+    justify-content:flex-start; gap:12px; min-height:48px; padding:12px 14px; font-size:15px;
+    border-radius:var(--radius-m); border-left:3px solid transparent; box-shadow:none;
+  }
+  .nav-links.mobile-open .nav-link.active{ border-left-color:var(--signal); box-shadow:none; }
+
+  /* itens movidos para dentro do menu */
+  .nav-extras{ display:flex; flex-direction:column; gap:8px; margin-top:8px; padding-top:12px; border-top:1px solid var(--border-soft); }
+  .nav-extras:empty{ display:none; }
+  .nav-extras .search-box{ display:flex; width:100%; flex:none; height:48px; padding:0 14px; position:relative; }
+  .nav-extras .search-box input{ font-size:16px; }
+  .nav-extras .search-dropdown{ position:static; width:100%; max-height:45vh; margin-top:8px; }
+  .navbar .nav-extras .icon-btn{
+    width:100%; height:48px; justify-content:flex-start; gap:12px; padding:0 14px; color:var(--text);
+  }
+  .navbar .nav-extras .icon-btn::after{ content:attr(aria-label); order:1; font-size:15px; font-weight:600; }
+  .navbar .nav-extras .icon-btn .badge-count{ position:static; order:2; margin-left:auto; border-color:var(--surface); }
+  .nav-extras .pass-chip{ width:100%; height:52px; padding:0 14px; border-radius:var(--radius-m); gap:12px; }
+  .nav-extras .pass-chip__body{ display:flex; flex:1; }
+}
+
+/* celular: barra mais compacta */
+@media (max-width:760px){
+  .container.navbar__inner{ padding:0 12px; gap:8px; }
+  .brand__name{ font-size:17px; }
+  .navbar .icon-btn{ width:40px; height:40px; }
+  .coin-chip{ height:40px; }
+  .profile-chip{ height:40px; }
+}
+
+/* telas estreitas: só o logo (o nome completo não cabe junto das moedas/carrinho/perfil) */
+@media (max-width:460px){
+  .brand__name{ display:none; }
+}
