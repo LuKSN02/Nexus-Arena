@@ -414,7 +414,7 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 .auth-footer__copy{ font-size:11.5px; color:var(--text-faint); margin-left:6px; }
 .auth-footer__right{ display:flex; align-items:center; gap:16px; }
 .auth-footer__slogan{ font-family:var(--f-display); font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--signal); text-transform:uppercase; line-height:1.3; text-align:right; }
-@media (max-width:760px){ .auth-footer{ position:static; margin-top:24px; justify-content:center; text-align:center; } .auth-topbar{ position:static; justify-content:center; text-align:center; } .auth-screen{ padding-top:20px; } }
+@media (max-width:900px), (max-height:760px){ .auth-footer{ position:static; margin-top:24px; justify-content:center; text-align:center; } .auth-topbar{ position:static; justify-content:center; text-align:center; } .auth-screen{ padding-top:20px; } }
 
 /* ==========================================================================
    LAYOUT DE PÁGINA / SEÇÕES
@@ -1043,7 +1043,9 @@ button, [role="button"]{ transition: transform .15s ease, background .15s ease, 
 
 /* Nunca deixa o layout inteiro rolar na horizontal por causa de UM elemento
    largo demais (a causa mais comum de "tudo fora do lugar" no celular). */
-html, body{ overflow-x:hidden; max-width:100%; }
+html{ overflow-x:hidden; max-width:100%; }
+body{ overflow-x:hidden; max-width:100%; }
+@supports (overflow:clip){ body{ overflow-x:clip; } } /* clip não cria contêiner de rolagem: evita o body "engolir" o scroll/toque no iOS e quebrar position:sticky */
 img:not(.avatar):not(.article-cover-img), video, canvas{ max-width:100%; height:auto; }
 svg:not(.icon):not(.gfx){ max-width:100%; height:auto; } /* ícones da UI (classe .icon, ver Icons.svg) e a arte dos cards (.gfx) ficam de fora — já têm tamanho fixo controlado por outra regra; deixar "height:auto" pegar neles distorcia o desenho (ícones) ou fazia a arte vazar da caixa de 150px do card de notícia (.gfx) */
 .avatar{ max-width:none; } /* avatares já têm width/height fixos vindos dos atributos HTML — "height:auto" global os esticava em containers flex (ex.: linha de comentário), virando oval */
@@ -1359,3 +1361,94 @@ svg:not(.icon):not(.gfx){ max-width:100%; height:auto; } /* ícones da UI (class
 .admin-queue-item__actions{ display:flex; gap:8px; flex:0 0 auto; }
 
 .community-empty{ text-align:center; padding:40px 16px; color:var(--text-faint); font-size:13.5px; }
+
+
+/* ==========================================================================
+   TELA DE LOGIN — LAYOUT MOBILE (refeito)
+   --------------------------------------------------------------------------
+   Problemas que isso resolve no celular:
+   - o formulário ficava ABAIXO da dobra (página com ~1180px de altura) e o
+     botão "Entrar" só aparecia depois de rolar muito;
+   - overflow:hidden na tela + 100vh (que no mobile é maior que a área visível)
+     deixava o fim do card cortado/sem rolagem em alguns navegadores;
+   - inputs com fonte < 16px fazem o iOS dar zoom ao tocar e "empurrar" a tela;
+   - alvos de toque pequenos (abas, olho da senha, "Esqueceu a senha?").
+   Ordem nova do card: aba -> e-mail -> senha -> botão -> redes sociais.
+   ========================================================================== */
+@media (max-width:600px), (max-height:480px) and (orientation:landscape){
+  .auth-screen{
+    min-height:100vh; min-height:100dvh;
+    justify-content:flex-start; align-items:stretch;
+    padding:max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    overflow:visible; overflow-x:clip; /* sem overflow:hidden: nada fica cortado nem sem rolagem */
+  }
+
+  /* topo: só a marca, centralizada (o slogan e o separador só ocupavam altura) */
+  .auth-topbar{ padding:6px 0 14px; justify-content:center; }
+  .auth-topbar__sep, .auth-topbar__tag{ display:none; }
+  .auth-topbar__brand img{ width:34px; height:34px; }
+
+  /* card mais enxuto */
+  .auth-card{
+    max-width:none; margin:0 auto; padding:22px 18px 20px; border-radius:var(--radius-l);
+    display:flex; flex-direction:column;
+  }
+  .auth-card__brand{ display:none; } /* a marca já está no topo */
+  .auth-card h1{ /* continua no HTML (acessibilidade/SEO), só não ocupa espaço */
+    position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden;
+    clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
+  .auth-sub{ font-size:15px; font-weight:600; color:var(--text); margin:0 0 4px; order:0; }
+
+  /* reordena: formulário primeiro, login social depois */
+  #authAlert{ order:1; }
+  .auth-tabs{ order:2; margin:16px 0 18px; }
+  #loginForm, #registerForm{ order:3; }
+  .auth-social-divider{ order:4; margin:20px 0 14px; }
+  .auth-social{ order:5; margin-top:0; }
+  .auth-foot{ order:6; margin-top:20px; font-size:13.5px; }
+  /* o texto original ("ou continue com e-mail") só faz sentido com o social em cima */
+  .auth-social-divider span{ font-size:0; }
+  .auth-social-divider span::after{ content:'ou entre com'; font-size:11.5px; }
+
+  /* alvos de toque >= 44px e fonte 16px nos campos (evita zoom automático do iOS) */
+  .field{ margin-bottom:14px; }
+  .field label{ font-size:13px; }
+  .field-input input{ font-size:16px; padding:14px 12px; min-height:48px; }
+  .field-toggle{ min-width:48px; min-height:48px; justify-content:center; align-items:center; padding:0; }
+  .auth-tab{ min-height:46px; font-size:14px; }
+  .auth-forgot-row{ margin:-6px 0 14px; }
+  .auth-forgot-row .link-accent{ display:inline-block; padding:10px 0 10px 12px; font-size:13.5px; }
+  .auth-card .btn-block{ min-height:50px; font-size:15px; }
+  .btn-social{ min-height:62px; font-size:12px; }
+  .auth-foot .link-accent{ display:inline-block; padding:8px 4px; }
+
+  /* toque responsivo: sem atraso de duplo-toque e sem o "flash" cinza do iOS */
+  .auth-card button, .auth-card a, .auth-card input{ touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+
+  /* faixa de jogos é decorativa: some no celular (empurrava o rodapé para longe) */
+  .auth-games-strip{ display:none; }
+
+  /* rodapé compacto, sempre no fim da tela */
+  .auth-footer{
+    margin-top:auto; padding:18px 0 0; border-top:none; flex-direction:column; gap:12px;
+  }
+  .auth-footer__brand{ flex-direction:column; gap:6px; }
+  .auth-footer__brand .brand__name{ display:none; }
+  .auth-footer__copy{ margin-left:0; line-height:1.6; }
+  .auth-footer__slogan{ display:none; }
+  .footer-social{ justify-content:center; }
+}
+
+/* celular muito pequeno (iPhone SE, 320-360px) */
+@media (max-width:360px){
+  .auth-card{ padding:18px 14px 16px; }
+  .auth-social{ gap:6px; }
+}
+
+/* celular deitado: mesmo layout compacto, mas com o card limitado em largura */
+@media (max-height:480px) and (orientation:landscape){
+  .auth-card{ max-width:520px; width:100%; padding:18px 22px 16px; }
+  .auth-topbar{ padding:2px 0 8px; }
+  .auth-footer{ padding-top:10px; }
+}
